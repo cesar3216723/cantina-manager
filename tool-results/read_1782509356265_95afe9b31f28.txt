@@ -1,0 +1,1115 @@
+     1→"use client"
+     2→
+     3→import { useState, useMemo } from "react"
+     4→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+     5→import { toast } from "sonner"
+     6→import {
+     7→  Plus,
+     8→  Pencil,
+     9→  Trash2,
+    10→  MoreVertical,
+    11→  Users,
+    12→  Wallet,
+    13→  Coins,
+    14→  CalendarDays,
+    15→  CheckCircle2,
+    16→  XCircle,
+    17→  Loader2,
+    18→} from "lucide-react"
+    19→
+    20→import {
+    21→  Tabs,
+    22→  TabsContent,
+    23→  TabsList,
+    24→  TabsTrigger,
+    25→} from "@/components/ui/tabs"
+    26→import {
+    27→  Card,
+    28→  CardContent,
+    29→  CardDescription,
+    30→  CardHeader,
+    31→  CardTitle,
+    32→} from "@/components/ui/card"
+    33→import { Button } from "@/components/ui/button"
+    34→import { Input } from "@/components/ui/input"
+    35→import { Label } from "@/components/ui/label"
+    36→import { Switch } from "@/components/ui/switch"
+    37→import { Badge } from "@/components/ui/badge"
+    38→import {
+    39→  Table,
+    40→  TableBody,
+    41→  TableCell,
+    42→  TableHead,
+    43→  TableHeader,
+    44→  TableRow,
+    45→  TableFooter,
+    46→} from "@/components/ui/table"
+    47→import {
+    48→  Dialog,
+    49→  DialogContent,
+    50→  DialogDescription,
+    51→  DialogFooter,
+    52→  DialogHeader,
+    53→  DialogTitle,
+    54→} from "@/components/ui/dialog"
+    55→import {
+    56→  Select,
+    57→  SelectContent,
+    58→  SelectItem,
+    59→  SelectTrigger,
+    60→  SelectValue,
+    61→} from "@/components/ui/select"
+    62→import {
+    63→  DropdownMenu,
+    64→  DropdownMenuContent,
+    65→  DropdownMenuItem,
+    66→  DropdownMenuTrigger,
+    67→} from "@/components/ui/dropdown-menu"
+    68→import {
+    69→  AlertDialog,
+    70→  AlertDialogAction,
+    71→  AlertDialogCancel,
+    72→  AlertDialogContent,
+    73→  AlertDialogDescription,
+    74→  AlertDialogFooter,
+    75→  AlertDialogHeader,
+    76→  AlertDialogTitle,
+    77→} from "@/components/ui/alert-dialog"
+    78→import {
+    79→  formatCurrency,
+    80→  todayDateInput,
+    81→} from "@/lib/format"
+    82→import { apiFetch, ApiError } from "@/lib/api-client"
+    83→
+    84→// ============================================================
+    85→// Tipos
+    86→// ============================================================
+    87→interface Staff {
+    88→  id: string
+    89→  name: string
+    90→  salary: number
+    91→  active: boolean
+    92→  sortOrder: number
+    93→}
+    94→
+    95→interface Product {
+    96→  id: string
+    97→  name: string
+    98→  category: string
+    99→  presentation: string | null
+   100→  salePrice: number
+   101→}
+   102→
+   103→interface TokenSale {
+   104→  id: string
+   105→  date: string
+   106→  staffId: string
+   107→  productId: string
+   108→  quantity: number
+   109→  unitPrice: number
+   110→  total: number
+   111→  commission: number
+   112→  staff?: Staff
+   113→  product?: Product
+   114→}
+   115→
+   116→interface StaffPayment {
+   117→  id: string
+   118→  date: string
+   119→  staffId: string
+   120→  salary: number
+   121→  commission: number
+   122→  consumption: number
+   123→  totalToPay: number
+   124→  notes: string | null
+   125→  staff?: Staff
+   126→}
+   127→
+   128→interface Sale {
+   129→  id: string
+   130→  date: string
+   131→  productId: string
+   132→  saleType: string
+   133→  staffId: string | null
+   134→  quantity: number
+   135→  unitPrice: number
+   136→  total: number
+   137→  isComplimentary: boolean
+   138→}
+   139→
+   140→// ============================================================
+   141→// Componente principal
+   142→// ============================================================
+   143→export function StaffModule() {
+   144→  return (
+   145→    <Tabs defaultValue="personal" className="w-full">
+   146→      <TabsList className="grid w-full grid-cols-2 h-auto sm:w-auto sm:inline-grid">
+   147→        <TabsTrigger value="personal" className="py-2">
+   148→          <Users className="size-4" />
+   149→          Personal
+   150→        </TabsTrigger>
+   151→        <TabsTrigger value="pagos" className="py-2">
+   152→          <Wallet className="size-4" />
+   153→          Pagos y Fichas
+   154→        </TabsTrigger>
+   155→      </TabsList>
+   156→
+   157→      <TabsContent value="personal">
+   158→        <PersonalTab />
+   159→      </TabsContent>
+   160→      <TabsContent value="pagos">
+   161→        <PaymentsTab />
+   162→      </TabsContent>
+   163→    </Tabs>
+   164→  )
+   165→}
+   166→
+   167→// ============================================================
+   168→// Tab 1: Personal (CRUD)
+   169→// ============================================================
+   170→function PersonalTab() {
+   171→  const queryClient = useQueryClient()
+   172→  const [dialogOpen, setDialogOpen] = useState(false)
+   173→  const [editing, setEditing] = useState<Staff | null>(null)
+   174→  const [deleteId, setDeleteId] = useState<Staff | null>(null)
+   175→  const [deleteOpen, setDeleteOpen] = useState(false)
+   176→
+   177→  const { data: staff = [], isLoading } = useQuery<Staff[]>({
+   178→    queryKey: ["staff"],
+   179→    queryFn: () => apiFetch<Staff[]>("/api/staff"),
+   180→  })
+   181→
+   182→  const createMutation = useMutation({
+   183→    mutationFn: (data: { name: string; salary: number; active: boolean; sortOrder: number }) =>
+   184→      apiFetch<Staff>("/api/staff", {
+   185→        method: "POST",
+   186→        body: JSON.stringify(data),
+   187→      }),
+   188→    onSuccess: () => {
+   189→      queryClient.invalidateQueries({ queryKey: ["staff"] })
+   190→      toast.success("Personal creado correctamente")
+   191→      setDialogOpen(false)
+   192→    },
+   193→    onError: (err: ApiError) => toast.error(err.message),
+   194→  })
+   195→
+   196→  const updateMutation = useMutation({
+   197→    mutationFn: ({
+   198→      id,
+   199→      data,
+   200→    }: {
+   201→      id: string
+   202→      data: { name: string; salary: number; active: boolean; sortOrder: number }
+   203→    }) =>
+   204→      apiFetch<Staff>(`/api/staff/${id}`, {
+   205→        method: "PUT",
+   206→        body: JSON.stringify(data),
+   207→      }),
+   208→    onSuccess: () => {
+   209→      queryClient.invalidateQueries({ queryKey: ["staff"] })
+   210→      toast.success("Personal actualizado correctamente")
+   211→      setDialogOpen(false)
+   212→    },
+   213→    onError: (err: ApiError) => toast.error(err.message),
+   214→  })
+   215→
+   216→  const deleteMutation = useMutation({
+   217→    mutationFn: (id: string) =>
+   218→      apiFetch<{ success: boolean }>(`/api/staff/${id}`, { method: "DELETE" }),
+   219→    onSuccess: () => {
+   220→      queryClient.invalidateQueries({ queryKey: ["staff"] })
+   221→      toast.success("Personal eliminado")
+   222→      setDeleteOpen(false)
+   223→    },
+   224→    onError: (err: ApiError) => {
+   225→      toast.error(err.message)
+   226→      setDeleteOpen(false)
+   227→    },
+   228→  })
+   229→
+   230→  const handleNew = () => {
+   231→    setEditing(null)
+   232→    setDialogOpen(true)
+   233→  }
+   234→
+   235→  const handleEdit = (s: Staff) => {
+   236→    setEditing(s)
+   237→    setDialogOpen(true)
+   238→  }
+   239→
+   240→  const handleDelete = (s: Staff) => {
+   241→    setDeleteId(s)
+   242→    setDeleteOpen(true)
+   243→  }
+   244→
+   245→  const confirmDelete = () => {
+   246→    if (deleteId) deleteMutation.mutate(deleteId.id)
+   247→  }
+   248→
+   249→  return (
+   250→    <Card>
+   251→      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   252→        <div>
+   253→          <CardTitle className="text-amber-700 dark:text-amber-400">
+   254→            Personal de la Cantina
+   255→          </CardTitle>
+   256→          <CardDescription>
+   257→            Administra empleados, sueldos diarios y estado.
+   258→          </CardDescription>
+   259→        </div>
+   260→        <Button
+   261→          onClick={handleNew}
+   262→          className="bg-amber-600 hover:bg-amber-700 text-white w-full sm:w-auto"
+   263→        >
+   264→          <Plus className="size-4" /> Nuevo
+   265→        </Button>
+   266→      </CardHeader>
+   267→      <CardContent>
+   268→        {isLoading ? (
+   269→          <div className="flex items-center justify-center py-12 text-muted-foreground">
+   270→            <Loader2 className="mr-2 size-5 animate-spin" /> Cargando...
+   271→          </div>
+   272→        ) : staff.length === 0 ? (
+   273→          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+   274→            No hay personal registrado. Haz clic en &quot;Nuevo&quot; para
+   275→            agregar.
+   276→          </div>
+   277→        ) : (
+   278→          <div className="overflow-x-auto">
+   279→            <Table>
+   280→              <TableHeader>
+   281→                <TableRow>
+   282→                  <TableHead>Nombre</TableHead>
+   283→                  <TableHead className="text-right">Sueldo diario</TableHead>
+   284→                  <TableHead className="text-center">Estado</TableHead>
+   285→                  <TableHead className="text-right">Acciones</TableHead>
+   286→                </TableRow>
+   287→              </TableHeader>
+   288→              <TableBody>
+   289→                {staff.map((s) => (
+   290→                  <TableRow key={s.id}>
+   291→                    <TableCell className="font-medium">{s.name}</TableCell>
+   292→                    <TableCell className="text-right tabular-nums">
+   293→                      {formatCurrency(s.salary)}
+   294→                    </TableCell>
+   295→                    <TableCell className="text-center">
+   296→                      {s.active ? (
+   297→                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300">
+   298→                          <CheckCircle2 className="size-3" /> Activo
+   299→                        </Badge>
+   300→                      ) : (
+   301→                        <Badge variant="secondary">
+   302→                          <XCircle className="size-3" /> Inactivo
+   303→                        </Badge>
+   304→                      )}
+   305→                    </TableCell>
+   306→                    <TableCell className="text-right">
+   307→                      <DropdownMenu>
+   308→                        <DropdownMenuTrigger asChild>
+   309→                          <Button
+   310→                            variant="ghost"
+   311→                            size="icon"
+   312→                            className="size-9"
+   313→                            aria-label="Acciones"
+   314→                          >
+   315→                            <MoreVertical className="size-4" />
+   316→                          </Button>
+   317→                        </DropdownMenuTrigger>
+   318→                        <DropdownMenuContent align="end">
+   319→                          <DropdownMenuItem onClick={() => handleEdit(s)}>
+   320→                            <Pencil className="size-4" /> Editar
+   321→                          </DropdownMenuItem>
+   322→                          <DropdownMenuItem
+   323→                            variant="destructive"
+   324→                            onClick={() => handleDelete(s)}
+   325→                          >
+   326→                            <Trash2 className="size-4" /> Eliminar
+   327→                          </DropdownMenuItem>
+   328→                        </DropdownMenuContent>
+   329→                      </DropdownMenu>
+   330→                    </TableCell>
+   331→                  </TableRow>
+   332→                ))}
+   333→              </TableBody>
+   334→            </Table>
+   335→          </div>
+   336→        )}
+   337→      </CardContent>
+   338→
+   339→      <StaffFormDialog
+   340→        open={dialogOpen}
+   341→        onOpenChange={setDialogOpen}
+   342→        editing={editing}
+   343→        onSubmit={(data) => {
+   344→          if (editing) {
+   345→            updateMutation.mutate({ id: editing.id, data })
+   346→          } else {
+   347→            createMutation.mutate(data)
+   348→          }
+   349→        }}
+   350→        loading={createMutation.isPending || updateMutation.isPending}
+   351→      />
+   352→
+   353→      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+   354→        <AlertDialogContent>
+   355→          <AlertDialogHeader>
+   356→            <AlertDialogTitle>Eliminar personal</AlertDialogTitle>
+   357→            <AlertDialogDescription>
+   358→              {deleteId && (
+   359→                <>
+   360→                  Seguro que deseas eliminar a{" "}
+   361→                  <strong>{deleteId.name}</strong>? Esta accion no se puede
+   362→                  deshacer. Si tiene registros asociados, no se podra eliminar
+   363→                  (te sugerimos desactivarlo).
+   364→                </>
+   365→              )}
+   366→            </AlertDialogDescription>
+   367→          </AlertDialogHeader>
+   368→          <AlertDialogFooter>
+   369→            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+   370→            <AlertDialogAction
+   371→              onClick={confirmDelete}
+   372→              className="bg-destructive text-white hover:bg-destructive/90"
+   373→            >
+   374→              {deleteMutation.isPending ? (
+   375→                <>
+   376→                  <Loader2 className="size-4 animate-spin" /> Eliminando...
+   377→                </>
+   378→              ) : (
+   379→                "Eliminar"
+   380→              )}
+   381→            </AlertDialogAction>
+   382→          </AlertDialogFooter>
+   383→        </AlertDialogContent>
+   384→      </AlertDialog>
+   385→    </Card>
+   386→  )
+   387→}
+   388→
+   389→// ============================================================
+   390→// Dialogo de formulario (crear / editar)
+   391→// ============================================================
+   392→function StaffFormDialog({
+   393→  open,
+   394→  onOpenChange,
+   395→  editing,
+   396→  onSubmit,
+   397→  loading,
+   398→}: {
+   399→  open: boolean
+   400→  onOpenChange: (v: boolean) => void
+   401→  editing: Staff | null
+   402→  onSubmit: (data: {
+   403→    name: string
+   404→    salary: number
+   405→    active: boolean
+   406→    sortOrder: number
+   407→  }) => void
+   408→  loading: boolean
+   409→}) {
+   410→  return (
+   411→    <Dialog open={open} onOpenChange={onOpenChange}>
+   412→      <DialogContent>
+   413→        <DialogHeader>
+   414→          <DialogTitle>
+   415→            {editing ? "Editar personal" : "Nuevo personal"}
+   416→          </DialogTitle>
+   417→          <DialogDescription>
+   418→            {editing
+   419→              ? "Actualiza los datos del miembro del personal."
+   420→              : "Captura los datos del nuevo miembro del personal."}
+   421→          </DialogDescription>
+   422→        </DialogHeader>
+   423→        <StaffForm
+   424→          key={editing?.id ?? "new"}
+   425→          editing={editing}
+   426→          onSubmit={onSubmit}
+   427→          loading={loading}
+   428→          onCancel={() => onOpenChange(false)}
+   429→        />
+   430→      </DialogContent>
+   431→    </Dialog>
+   432→  )
+   433→}
+   434→
+   435→function StaffForm({
+   436→  editing,
+   437→  onSubmit,
+   438→  loading,
+   439→  onCancel,
+   440→}: {
+   441→  editing: Staff | null
+   442→  onSubmit: (data: {
+   443→    name: string
+   444→    salary: number
+   445→    active: boolean
+   446→    sortOrder: number
+   447→  }) => void
+   448→  loading: boolean
+   449→  onCancel: () => void
+   450→}) {
+   451→  const [name, setName] = useState(editing?.name ?? "")
+   452→  const [salary, setSalary] = useState(
+   453→    editing ? String(editing.salary) : ""
+   454→  )
+   455→  const [active, setActive] = useState(editing ? editing.active : true)
+   456→  const [sortOrder, setSortOrder] = useState(
+   457→    editing ? String(editing.sortOrder) : "0"
+   458→  )
+   459→
+   460→  const handleSubmit = (e: React.FormEvent) => {
+   461→    e.preventDefault()
+   462→    if (!name.trim()) {
+   463→      toast.error("El nombre es obligatorio")
+   464→      return
+   465→    }
+   466→    onSubmit({
+   467→      name: name.trim(),
+   468→      salary: parseFloat(salary) || 0,
+   469→      active,
+   470→      sortOrder: parseInt(sortOrder) || 0,
+   471→    })
+   472→  }
+   473→
+   474→  return (
+   475→    <form onSubmit={handleSubmit} className="space-y-4">
+   476→      <div className="space-y-2">
+   477→        <Label htmlFor="name">Nombre</Label>
+   478→        <Input
+   479→          id="name"
+   480→          value={name}
+   481→          onChange={(e) => setName(e.target.value)}
+   482→          placeholder="Ej. ELOY"
+   483→          autoFocus
+   484→        />
+   485→      </div>
+   486→      <div className="space-y-2">
+   487→        <Label htmlFor="salary">Sueldo diario (MXN)</Label>
+   488→        <Input
+   489→          id="salary"
+   490→          type="number"
+   491→          min={0}
+   492→          step="0.01"
+   493→          value={salary}
+   494→          onChange={(e) => setSalary(e.target.value)}
+   495→          placeholder="0.00"
+   496→        />
+   497→      </div>
+   498→      <div className="space-y-2">
+   499→        <Label htmlFor="sortOrder">Orden</Label>
+   500→        <Input
+   501→          id="sortOrder"
+   502→          type="number"
+   503→          min={0}
+   504→          value={sortOrder}
+   505→          onChange={(e) => setSortOrder(e.target.value)}
+   506→          placeholder="0"
+   507→        />
+   508→      </div>
+   509→      <div className="flex items-center justify-between rounded-lg border p-3">
+   510→        <div className="space-y-0.5">
+   511→          <Label htmlFor="active">Activo</Label>
+   512→          <p className="text-xs text-muted-foreground">
+   513→            El personal inactivo no aparece en pagos ni fichas.
+   514→          </p>
+   515→        </div>
+   516→        <Switch
+   517→          id="active"
+   518→          checked={active}
+   519→          onCheckedChange={setActive}
+   520→        />
+   521→      </div>
+   522→      <DialogFooter>
+   523→        <Button type="button" variant="outline" onClick={onCancel}>
+   524→          Cancelar
+   525→        </Button>
+   526→        <Button
+   527→          type="submit"
+   528→          disabled={loading}
+   529→          className="bg-amber-600 hover:bg-amber-700 text-white"
+   530→        >
+   531→          {loading && <Loader2 className="size-4 animate-spin" />}
+   532→          {editing ? "Guardar cambios" : "Crear"}
+   533→        </Button>
+   534→      </DialogFooter>
+   535→    </form>
+   536→  )
+   537→}
+   538→
+   539→// ============================================================
+   540→// Tab 2: Pagos y Fichas
+   541→// ============================================================
+   542→function PaymentsTab() {
+   543→  const [date, setDate] = useState<string>(todayDateInput())
+   544→
+   545→  const { data: staff = [] } = useQuery<Staff[]>({
+   546→    queryKey: ["staff", "active"],
+   547→    queryFn: () => apiFetch<Staff[]>("/api/staff?active=true"),
+   548→  })
+   549→  const { data: products = [] } = useQuery<Product[]>({
+   550→    queryKey: ["products", "active"],
+   551→    queryFn: () => apiFetch<Product[]>("/api/products?active=true"),
+   552→  })
+   553→
+   554→  const queryClient = useQueryClient()
+   555→
+   556→  const tokensQ = useQuery<TokenSale[]>({
+   557→    queryKey: ["tokens", date],
+   558→    queryFn: () =>
+   559→      apiFetch<TokenSale[]>(`/api/staff/tokens?date=${encodeURIComponent(date)}`),
+   560→    enabled: !!date,
+   561→  })
+   562→
+   563→  const paymentsQ = useQuery<StaffPayment[]>({
+   564→    queryKey: ["staff-payments", date],
+   565→    queryFn: () =>
+   566→      apiFetch<StaffPayment[]>(
+   567→        `/api/staff/payments?date=${encodeURIComponent(date)}`
+   568→      ),
+   569→    enabled: !!date,
+   570→  })
+   571→
+   572→  const personalSalesQ = useQuery<Sale[]>({
+   573→    queryKey: ["personal-sales", date],
+   574→    queryFn: () =>
+   575→      apiFetch<Sale[]>(
+   576→        `/api/sales?saleType=PERSONAL&date=${encodeURIComponent(date)}`
+   577→      ).catch(() => [] as Sale[]),
+   578→    enabled: !!date,
+   579→  })
+   580→
+   581→  // Refresca al cambiar de tab (refetchOnWindowFocus deshabilitado por defecto)
+   582→  // se revalida al guardar
+   583→  const invalidateDay = () => {
+   584→    queryClient.invalidateQueries({ queryKey: ["tokens", date] })
+   585→    queryClient.invalidateQueries({ queryKey: ["staff-payments", date] })
+   586→    queryClient.invalidateQueries({ queryKey: ["personal-sales", date] })
+   587→  }
+   588→
+   589→  return (
+   590→    <div className="space-y-6">
+   591→      {/* Selector de fecha */}
+   592→      <Card>
+   593→        <CardHeader className="pb-3">
+   594→          <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+   595→            <CalendarDays className="size-5" /> Dia de operacion
+   596→          </CardTitle>
+   597→          <CardDescription>
+   598→            Captura fichas y registra pagos del personal para la fecha
+   599→            seleccionada.
+   600→          </CardDescription>
+   601→        </CardHeader>
+   602→        <CardContent>
+   603→          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+   604→            <Label htmlFor="date" className="sm:w-24">
+   605→              Fecha
+   606→            </Label>
+   607→            <Input
+   608→              id="date"
+   609→              type="date"
+   610→              value={date}
+   611→              onChange={(e) => setDate(e.target.value || todayDateInput())}
+   612→              className="sm:max-w-[220px]"
+   613→            />
+   614→            <Button
+   615→              variant="outline"
+   616→              size="sm"
+   617→              onClick={() => setDate(todayDateInput())}
+   618→              className="sm:ml-auto"
+   619→            >
+   620→              Hoy
+   621→            </Button>
+   622→          </div>
+   623→        </CardContent>
+   624→      </Card>
+   625→
+   626→      {/* Venta de Fichas */}
+   627→      <TokenSalesSection
+   628→        date={date}
+   629→        staff={staff}
+   630→        products={products}
+   631→        tokens={tokensQ.data ?? []}
+   632→        isLoading={tokensQ.isLoading}
+   633→        onChanged={invalidateDay}
+   634→      />
+   635→
+   636→      {/* Pago de Personal */}
+   637→      <StaffPaymentsSection
+   638→        date={date}
+   639→        staff={staff}
+   640→        tokenSales={tokensQ.data ?? []}
+   641→        personalSales={personalSalesQ.data ?? []}
+   642→        existingPayments={paymentsQ.data ?? []}
+   643→        onChanged={invalidateDay}
+   644→      />
+   645→    </div>
+   646→  )
+   647→}
+   648→
+   649→// ============================================================
+   650→// Seccion: Venta de Fichas
+   651→// ============================================================
+   652→function TokenSalesSection({
+   653→  date,
+   654→  staff,
+   655→  products,
+   656→  tokens,
+   657→  isLoading,
+   658→  onChanged,
+   659→}: {
+   660→  date: string
+   661→  staff: Staff[]
+   662→  products: Product[]
+   663→  tokens: TokenSale[]
+   664→  isLoading: boolean
+   665→  onChanged: () => void
+   666→}) {
+   667→  const queryClient = useQueryClient()
+   668→  const [staffId, setStaffId] = useState("")
+   669→  const [productId, setProductId] = useState("")
+   670→  const [quantity, setQuantity] = useState("1")
+   671→  const [unitPrice, setUnitPrice] = useState("60")
+   672→
+   673→  const createMutation = useMutation({
+   674→    mutationFn: (data: {
+   675→      date: string
+   676→      staffId: string
+   677→      productId: string
+   678→      quantity: number
+   679→      unitPrice: number
+   680→    }) =>
+   681→      apiFetch<TokenSale>("/api/staff/tokens", {
+   682→        method: "POST",
+   683→        body: JSON.stringify(data),
+   684→      }),
+   685→    onSuccess: () => {
+   686→      queryClient.invalidateQueries({ queryKey: ["tokens", date] })
+   687→      toast.success("Ficha registrada")
+   688→      setQuantity("1")
+   689→    },
+   690→    onError: (err: ApiError) => toast.error(err.message),
+   691→  })
+   692→
+   693→  const deleteMutation = useMutation({
+   694→    mutationFn: (id: string) =>
+   695→      apiFetch<{ success: boolean }>(`/api/staff/tokens/${id}`, {
+   696→        method: "DELETE",
+   697→      }),
+   698→    onSuccess: () => {
+   699→      queryClient.invalidateQueries({ queryKey: ["tokens", date] })
+   700→      toast.success("Ficha eliminada")
+   701→      onChanged()
+   702→    },
+   703→    onError: (err: ApiError) => toast.error(err.message),
+   704→  })
+   705→
+   706→  const qty = parseInt(quantity) || 0
+   707→  const price = parseFloat(unitPrice) || 0
+   708→  const totalCalc = qty * price
+   709→  const commissionCalc = Math.round((qty * price) / 6 * 100) / 100
+   710→
+   711→  const handleSubmit = (e: React.FormEvent) => {
+   712→    e.preventDefault()
+   713→    if (!staffId) {
+   714→      toast.error("Selecciona el personal")
+   715→      return
+   716→    }
+   717→    if (!productId) {
+   718→      toast.error("Selecciona un producto")
+   719→      return
+   720→    }
+   721→    if (qty <= 0) {
+   722→      toast.error("La cantidad debe ser mayor a 0")
+   723→      return
+   724→    }
+   725→    createMutation.mutate({
+   726→      date,
+   727→      staffId,
+   728→      productId,
+   729→      quantity: qty,
+   730→      unitPrice: price,
+   731→    })
+   732→  }
+   733→
+   734→  // Totales
+   735→  const totals = useMemo(() => {
+   736→    return tokens.reduce(
+   737→      (acc, t) => {
+   738→        acc.total += t.total
+   739→        acc.commission += t.commission
+   740→        acc.quantity += t.quantity
+   741→        return acc
+   742→      },
+   743→      { total: 0, commission: 0, quantity: 0 }
+   744→    )
+   745→  }, [tokens])
+   746→
+   747→  return (
+   748→    <Card>
+   749→      <CardHeader className="pb-3">
+   750→        <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+   751→          <Coins className="size-5" /> Venta de Fichas
+   752→        </CardTitle>
+   753→        <CardDescription>
+   754→          Registra las fichas (tokens) vendidas por cada miembro del personal.
+   755→        </CardDescription>
+   756→      </CardHeader>
+   757→      <CardContent className="space-y-4">
+   758→        {/* Formulario */}
+   759→        <form
+   760→          onSubmit={handleSubmit}
+   761→          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5"
+   762→        >
+   763→          <div className="space-y-1">
+   764→            <Label className="text-xs">Personal</Label>
+   765→            <Select value={staffId} onValueChange={setStaffId}>
+   766→              <SelectTrigger className="w-full h-10">
+   767→                <SelectValue placeholder="Selecciona..." />
+   768→              </SelectTrigger>
+   769→              <SelectContent>
+   770→                {staff.map((s) => (
+   771→                  <SelectItem key={s.id} value={s.id}>
+   772→                    {s.name}
+   773→                  </SelectItem>
+   774→                ))}
+   775→              </SelectContent>
+   776→            </Select>
+   777→          </div>
+   778→          <div className="space-y-1">
+   779→            <Label className="text-xs">Producto</Label>
+   780→            <Select value={productId} onValueChange={setProductId}>
+   781→              <SelectTrigger className="w-full h-10">
+   782→                <SelectValue placeholder="Selecciona..." />
+   783→              </SelectTrigger>
+   784→              <SelectContent>
+   785→                {products.map((p) => (
+   786→                  <SelectItem key={p.id} value={p.id}>
+   787→                    {p.name}
+   788→                  </SelectItem>
+   789→                ))}
+   790→              </SelectContent>
+   791→            </Select>
+   792→          </div>
+   793→          <div className="space-y-1">
+   794→            <Label className="text-xs">Cantidad</Label>
+   795→            <Input
+   796→              type="number"
+   797→              min={1}
+   798→              value={quantity}
+   799→              onChange={(e) => setQuantity(e.target.value)}
+   800→              className="h-10"
+   801→            />
+   802→          </div>
+   803→          <div className="space-y-1">
+   804→            <Label className="text-xs">Precio ficha</Label>
+   805→            <Input
+   806→              type="number"
+   807→              min={0}
+   808→              step="0.01"
+   809→              value={unitPrice}
+   810→              onChange={(e) => setUnitPrice(e.target.value)}
+   811→              className="h-10"
+   812→            />
+   813→          </div>
+   814→          <div className="flex items-end">
+   815→            <Button
+   816→              type="submit"
+   817→              disabled={createMutation.isPending}
+   818→              className="h-10 w-full bg-amber-600 hover:bg-amber-700 text-white"
+   819→            >
+   820→              {createMutation.isPending ? (
+   821→                <Loader2 className="size-4 animate-spin" />
+   822→              ) : (
+   823→                <Plus className="size-4" />
+   824→              )}
+   825→              Agregar
+   826→            </Button>
+   827→          </div>
+   828→        </form>
+   829→
+   830→        {/* Resumen rapido del calculo */}
+   831→        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+   832→          <span>
+   833→            Total calculado:{" "}
+   834→            <strong className="text-foreground">
+   835→              {formatCurrency(totalCalc)}
+   836→            </strong>
+   837→          </span>
+   838→          <span>
+   839→            Comision (1/6):{" "}
+   840→            <strong className="text-foreground">
+   841→              {formatCurrency(commissionCalc)}
+   842→            </strong>
+   843→          </span>
+   844→        </div>
+   845→
+   846→        {/* Tabla */}
+   847→        {isLoading ? (
+   848→          <div className="flex items-center justify-center py-8 text-muted-foreground">
+   849→            <Loader2 className="mr-2 size-5 animate-spin" /> Cargando fichas...
+   850→          </div>
+   851→        ) : tokens.length === 0 ? (
+   852→          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+   853→            No hay fichas registradas para esta fecha.
+   854→          </div>
+   855→        ) : (
+   856→          <div className="overflow-x-auto">
+   857→            <Table>
+   858→              <TableHeader>
+   859→                <TableRow>
+   860→                  <TableHead>Personal</TableHead>
+   861→                  <TableHead>Producto</TableHead>
+   862→                  <TableHead className="text-right">Cant.</TableHead>
+   863→                  <TableHead className="text-right">Precio</TableHead>
+   864→                  <TableHead className="text-right">Total</TableHead>
+   865→                  <TableHead className="text-right">Comision</TableHead>
+   866→                  <TableHead className="text-right">Acciones</TableHead>
+   867→                </TableRow>
+   868→              </TableHeader>
+   869→              <TableBody>
+   870→                {tokens.map((t) => (
+   871→                  <TableRow key={t.id}>
+   872→                    <TableCell className="font-medium">
+   873→                      {t.staff?.name ?? "—"}
+   874→                    </TableCell>
+   875→                    <TableCell>{t.product?.name ?? "—"}</TableCell>
+   876→                    <TableCell className="text-right tabular-nums">
+   877→                      {t.quantity}
+   878→                    </TableCell>
+   879→                    <TableCell className="text-right tabular-nums">
+   880→                      {formatCurrency(t.unitPrice)}
+   881→                    </TableCell>
+   882→                    <TableCell className="text-right tabular-nums font-medium">
+   883→                      {formatCurrency(t.total)}
+   884→                    </TableCell>
+   885→                    <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+   886→                      {formatCurrency(t.commission)}
+   887→                    </TableCell>
+   888→                    <TableCell className="text-right">
+   889→                      <Button
+   890→                        variant="ghost"
+   891→                        size="icon"
+   892→                        className="size-9 text-destructive hover:text-destructive"
+   893→                        onClick={() => deleteMutation.mutate(t.id)}
+   894→                        aria-label="Eliminar ficha"
+   895→                      >
+   896→                        <Trash2 className="size-4" />
+   897→                      </Button>
+   898→                    </TableCell>
+   899→                  </TableRow>
+   900→                ))}
+   901→              </TableBody>
+   902→              <TableFooter>
+   903→                <TableRow>
+   904→                  <TableCell colSpan={2} className="font-semibold">
+   905→                    Totales
+   906→                  </TableCell>
+   907→                  <TableCell className="text-right tabular-nums font-semibold">
+   908→                    {totals.quantity}
+   909→                  </TableCell>
+   910→                  <TableCell />
+   911→                  <TableCell className="text-right tabular-nums font-semibold">
+   912→                    {formatCurrency(totals.total)}
+   913→                  </TableCell>
+   914→                  <TableCell className="text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+   915→                    {formatCurrency(totals.commission)}
+   916→                  </TableCell>
+   917→                  <TableCell />
+   918→                </TableRow>
+   919→              </TableFooter>
+   920→            </Table>
+   921→          </div>
+   922→        )}
+   923→      </CardContent>
+   924→    </Card>
+   925→  )
+   926→}
+   927→
+   928→// ============================================================
+   929→// Seccion: Pago de Personal
+   930→// ============================================================
+   931→function StaffPaymentsSection({
+   932→  date,
+   933→  staff,
+   934→  tokenSales,
+   935→  personalSales,
+   936→  existingPayments,
+   937→  onChanged,
+   938→}: {
+   939→  date: string
+   940→  staff: Staff[]
+   941→  tokenSales: TokenSale[]
+   942→  personalSales: Sale[]
+   943→  existingPayments: StaffPayment[]
+   944→  onChanged: () => void
+   945→}) {
+   946→  const queryClient = useQueryClient()
+   947→
+   948→  // Calcula por empleado: sueldo, comision (fichas), consumo (ventas personales), total
+   949→  const rows = useMemo(() => {
+   950→    return staff.map((s) => {
+   951→      const commission = tokenSales
+   952→        .filter((t) => t.staffId === s.id)
+   953→        .reduce((sum, t) => sum + t.commission, 0)
+   954→      const consumption = personalSales
+   955→        .filter((sale) => sale.staffId === s.id)
+   956→        .reduce((sum, sale) => sum + sale.total, 0)
+   957→      const salary = s.salary
+   958→      const totalToPay = salary + commission - consumption
+   959→      const alreadyPaid = existingPayments.some((p) => p.staffId === s.id)
+   960→      return {
+   961→        staff: s,
+   962→        salary,
+   963→        commission,
+   964→        consumption,
+   965→        totalToPay,
+   966→        alreadyPaid,
+   967→      }
+   968→    })
+   969→  }, [staff, tokenSales, personalSales, existingPayments])
+   970→
+   971→  const totals = useMemo(() => {
+   972→    return rows.reduce(
+   973→      (acc, r) => {
+   974→        acc.salary += r.salary
+   975→        acc.commission += r.commission
+   976→        acc.consumption += r.consumption
+   977→        acc.totalToPay += r.totalToPay
+   978→        return acc
+   979→      },
+   980→      { salary: 0, commission: 0, consumption: 0, totalToPay: 0 }
+   981→    )
+   982→  }, [rows])
+   983→
+   984→  const createPaymentMutation = useMutation({
+   985→    mutationFn: (data: {
+   986→      date: string
+   987→      staffId: string
+   988→      salary: number
+   989→      commission: number
+   990→      consumption: number
+   991→      totalToPay: number
+   992→    }) =>
+   993→      apiFetch<StaffPayment>("/api/staff/payments", {
+   994→        method: "POST",
+   995→        body: JSON.stringify(data),
+   996→      }),
+   997→    onSuccess: () => {
+   998→      queryClient.invalidateQueries({ queryKey: ["staff-payments", date] })
+   999→      toast.success("Pago registrado")
+  1000→      onChanged()
+  1001→    },
+  1002→    onError: (err: ApiError) => toast.error(err.message),
+  1003→  })
+  1004→
+  1005→  return (
+  1006→    <Card>
+  1007→      <CardHeader className="pb-3">
+  1008→        <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+  1009→          <Wallet className="size-5" /> Pago de Personal
+  1010→        </CardTitle>
+  1011→        <CardDescription>
+  1012→          Sueldo + comision (fichas) - consumo (ventas personales). Registra el
+  1013→          pago del dia con el boton &quot;Registrar Pago&quot;.
+  1014→        </CardDescription>
+  1015→      </CardHeader>
+  1016→      <CardContent>
+  1017→        {rows.length === 0 ? (
+  1018→          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+  1019→            No hay personal activo. Agrega personal en la pestana &quot;Personal&quot;.
+  1020→          </div>
+  1021→        ) : (
+  1022→          <div className="overflow-x-auto">
+  1023→            <Table>
+  1024→              <TableHeader>
+  1025→                <TableRow>
+  1026→                  <TableHead>Personal</TableHead>
+  1027→                  <TableHead className="text-right">Sueldo</TableHead>
+  1028→                  <TableHead className="text-right">Comision</TableHead>
+  1029→                  <TableHead className="text-right">Consumo</TableHead>
+  1030→                  <TableHead className="text-right">A Pagar</TableHead>
+  1031→                  <TableHead className="text-center">Estado</TableHead>
+  1032→                  <TableHead className="text-right">Acciones</TableHead>
+  1033→                </TableRow>
+  1034→              </TableHeader>
+  1035→              <TableBody>
+  1036→                {rows.map((r) => (
+  1037→                  <TableRow key={r.staff.id}>
+  1038→                    <TableCell className="font-medium">{r.staff.name}</TableCell>
+  1039→                    <TableCell className="text-right tabular-nums">
+  1040→                      {formatCurrency(r.salary)}
+  1041→                    </TableCell>
+  1042→                    <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+  1043→                      {formatCurrency(r.commission)}
+  1044→                    </TableCell>
+  1045→                    <TableCell className="text-right tabular-nums text-orange-600 dark:text-orange-400">
+  1046→                      {formatCurrency(r.consumption)}
+  1047→                    </TableCell>
+  1048→                    <TableCell className="text-right tabular-nums font-bold">
+  1049→                      {formatCurrency(r.totalToPay)}
+  1050→                    </TableCell>
+  1051→                    <TableCell className="text-center">
+  1052→                      {r.alreadyPaid ? (
+  1053→                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300">
+  1054→                          <CheckCircle2 className="size-3" /> Pagado
+  1055→                        </Badge>
+  1056→                      ) : (
+  1057→                        <Badge variant="outline">Pendiente</Badge>
+  1058→                      )}
+  1059→                    </TableCell>
+  1060→                    <TableCell className="text-right">
+  1061→                      <Button
+  1062→                        size="sm"
+  1063→                        disabled={
+  1064→                          r.alreadyPaid || createPaymentMutation.isPending
+  1065→                        }
+  1066→                        onClick={() =>
+  1067→                          createPaymentMutation.mutate({
+  1068→                            date,
+  1069→                            staffId: r.staff.id,
+  1070→                            salary: r.salary,
+  1071→                            commission: r.commission,
+  1072→                            consumption: r.consumption,
+  1073→                            totalToPay: r.totalToPay,
+  1074→                          })
+  1075→                        }
+  1076→                        className="bg-amber-600 hover:bg-amber-700 text-white"
+  1077→                      >
+  1078→                        {createPaymentMutation.isPending ? (
+  1079→                          <Loader2 className="size-4 animate-spin" />
+  1080→                        ) : (
+  1081→                          <Wallet className="size-4" />
+  1082→                        )}
+  1083→                        Registrar Pago
+  1084→                      </Button>
+  1085→                    </TableCell>
+  1086→                  </TableRow>
+  1087→                ))}
+  1088→              </TableBody>
+  1089→              <TableFooter>
+  1090→                <TableRow>
+  1091→                  <TableCell className="font-semibold">Totales</TableCell>
+  1092→                  <TableCell className="text-right tabular-nums font-semibold">
+  1093→                    {formatCurrency(totals.salary)}
+  1094→                  </TableCell>
+  1095→                  <TableCell className="text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+  1096→                    {formatCurrency(totals.commission)}
+  1097→                  </TableCell>
+  1098→                  <TableCell className="text-right tabular-nums font-semibold text-orange-600 dark:text-orange-400">
+  1099→                    {formatCurrency(totals.consumption)}
+  1100→                  </TableCell>
+  1101→                  <TableCell className="text-right tabular-nums font-bold">
+  1102→                    {formatCurrency(totals.totalToPay)}
+  1103→                  </TableCell>
+  1104→                  <TableCell />
+  1105→                  <TableCell />
+  1106→                </TableRow>
+  1107→              </TableFooter>
+  1108→            </Table>
+  1109→          </div>
+  1110→        )}
+  1111→      </CardContent>
+  1112→    </Card>
+  1113→  )
+  1114→}
+  1115→

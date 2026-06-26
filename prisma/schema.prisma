@@ -1,0 +1,191 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// CATALOGOS
+// ============================================================
+
+model Product {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  category      String   @default("OTROS") // CERVEZA, BOTANA, REFRESCO, MIX, OTROS, SERVICIO
+  presentation  String?  // MEDIA, MEGA, CUBO, PROMO, MICHE, COPA, BOTELLA, etc.
+  purchasePrice Float    @default(0) // $ COMPRA
+  salePrice     Float    @default(0) // $ VENTA
+  active        Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sales         Sale[]
+  inventory     DailyInventory[]
+  tokenSales    TokenSale[]
+}
+
+model Staff {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  salary    Float    @default(0) // sueldo diario
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  personalSales Sale[]
+  tokenSales    TokenSale[]
+  payments      StaffPayment[]
+}
+
+// ============================================================
+// OPERACION DIARIA
+// ============================================================
+
+// Venta (publica o personal). isComplimentary = cortesia
+model Sale {
+  id             String   @id @default(cuid())
+  date           DateTime
+  productId      String
+  product        Product  @relation(fields: [productId], references: [id])
+  saleType       String   @default("PUBLICO") // PUBLICO, PERSONAL
+  staffId        String?  // solo para PERSONAL
+  staff          Staff?   @relation(fields: [staffId], references: [id])
+  quantity       Int      @default(0)
+  unitPrice      Float    @default(0) // precio de venta unitario (snapshot)
+  purchasePrice  Float    @default(0) // snapshot del costo
+  total          Float    @default(0) // quantity * unitPrice
+  isComplimentary Boolean @default(false) // cortesia
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([date])
+  @@index([saleType])
+  @@index([productId])
+}
+
+// Venta de fichas (tokens) por personal, con comision
+model TokenSale {
+  id           String   @id @default(cuid())
+  date         DateTime
+  staffId      String
+  staff        Staff    @relation(fields: [staffId], references: [id])
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id])
+  quantity     Int      @default(0)
+  unitPrice    Float    @default(0) // precio ficha (60 o 80)
+  total        Float    @default(0) // quantity * unitPrice
+  commission   Float    @default(0) // comision generada
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([date])
+  @@index([staffId])
+}
+
+// Inventario diario por producto
+model DailyInventory {
+  id            String   @id @default(cuid())
+  date          DateTime
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  initialQty    Int      @default(0) // CANTIDAD INICIAL
+  entry         Int      @default(0) // ENTRADA
+  exit          Int      @default(0) // SALIDA
+  finalQty      Int      @default(0) // CANTIDAD FINAL (calculo)
+  physicalCount Int      @default(0) // CONTEO FISICO
+  difference    Int      @default(0) // DIFERENCIA (fisico - final)
+  observations  String?  // OBSERVACIONES
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([date, productId])
+  @@index([date])
+}
+
+// ============================================================
+// FINANZAS DIARIAS
+// ============================================================
+
+// Gasto registrado en el dia
+model Expense {
+  id            String   @id @default(cuid())
+  date          DateTime
+  description   String
+  amount        Float    @default(0)
+  paymentMethod String   @default("EFECTIVO") // EFECTIVO, ELECTRONICO
+  category      String   @default("GENERAL") // SUELDO, COMISION, COMPRA, SERVICIO, GENERAL
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([date])
+}
+
+// Credito otorgado a cliente
+model Credit {
+  id          String   @id @default(cuid())
+  date        DateTime
+  customerName String
+  description String
+  amount      Float    @default(0)
+  status      String   @default("PENDIENTE") // PENDIENTE, PAGADO, CANCELADO
+  paidDate    DateTime?
+  paymentMethod String? // EFECTIVO, ELECTRONICO
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([status])
+}
+
+// Pago a personal (sueldo + comision - consumo)
+model StaffPayment {
+  id          String   @id @default(cuid())
+  date        DateTime
+  staffId     String
+  staff       Staff    @relation(fields: [staffId], references: [id])
+  salary      Float    @default(0) // SUELDO
+  commission  Float    @default(0) // COMISION
+  consumption Float    @default(0) // CONSUMO del personal
+  totalToPay  Float    @default(0) // A PAGAR
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+  @@index([staffId])
+}
+
+// Corte de caja diario (resumen)
+model DailyCashClosing {
+  id               String   @id @default(cuid())
+  date             DateTime @unique
+  totalSales       Float    @default(0) // VENTA total del dia
+  electronicSales  Float    @default(0) // venta cobrada con tarjeta
+  cashSales        Float    @default(0) // venta cobrada en efectivo
+  initialCash      Float    @default(0) // CAJA INICIAL efectivo
+  initialElectronic Float   @default(0) // CAJA INICIAL electronico
+  finalCash        Float    @default(0) // CAJA FINAL efectivo
+  finalElectronic  Float    @default(0) // CAJA FINAL electronico
+  totalExpenses    Float    @default(0) // GASTOS totales
+  cashExpenses     Float    @default(0)
+  electronicExpenses Float  @default(0)
+  deliveries       Float    @default(0) // ENTREGA (dinero entregado al dueno)
+  cashDeliveries   Float    @default(0)
+  electronicDeliveries Float @default(0)
+  auditDifference  Float    @default(0) // DIFERENCIA en revision
+  notes            String?
+  closed           Boolean  @default(false) // corte cerrado
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([date])
+}
