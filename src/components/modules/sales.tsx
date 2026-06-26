@@ -1,34 +1,46 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import {
+  Search,
+  Plus,
+  Trash2,
+  ShoppingCart,
+  Gift,
+  TrendingUp,
+  Calendar,
+  User,
+  Package,
+  X,
+  Minus,
+} from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  Save,
-  Loader2,
-  ShoppingCart,
-  Users,
-  Gift,
-  AlertCircle,
-} from "lucide-react";
-
-import { apiFetch } from "@/lib/api-client";
-import {
-  formatCurrency,
-  formatDateInput,
-  todayDateInput,
-  CATEGORY_COLORS,
-} from "@/lib/format";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -36,17 +48,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TableFooter,
 } from "@/components/ui/table";
+import { apiFetch, ApiError } from "@/lib/api-client";
 import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
+  formatCurrency,
+  formatDate,
+  formatDateInput,
+  todayDateInput,
+  CATEGORY_COLORS,
+} from "@/lib/format";
 
-// ---------------- Types ----------------
+// ---------- Types ----------
 interface Product {
   id: string;
   name: string;
@@ -63,14 +75,13 @@ interface Staff {
   name: string;
   salary: number;
   active: boolean;
-  sortOrder: number;
 }
 
 interface Sale {
   id: string;
   date: string;
   productId: string;
-  product?: Product;
+  product: Product;
   saleType: string;
   staffId?: string | null;
   staff?: Staff | null;
@@ -79,510 +90,62 @@ interface Sale {
   purchasePrice: number;
   total: number;
   isComplimentary: boolean;
+  createdAt: string;
 }
 
-// ---------------- Constants ----------------
-const CATEGORY_ORDER = [
-  "CERVEZA",
-  "BOTANA",
-  "REFRESCO",
-  "MIX",
-  "SERVICIO",
-  "OTROS",
-];
-
-const CATEGORY_HEADER_BG: Record<string, string> = {
-  CERVEZA: "bg-amber-50 dark:bg-amber-950/30",
-  BOTANA: "bg-orange-50 dark:bg-orange-950/30",
-  REFRESCO: "bg-emerald-50 dark:bg-emerald-950/30",
-  MIX: "bg-pink-50 dark:bg-pink-950/30",
-  SERVICIO: "bg-purple-50 dark:bg-purple-950/30",
-  OTROS: "bg-slate-50 dark:bg-slate-900/40",
-};
-
-// ---------------- Helpers ----------------
-function buildQtyMap(sales: Sale[]): Record<string, number> {
-  const m: Record<string, number> = {};
-  for (const s of sales) m[s.productId] = s.quantity;
-  return m;
-}
-
-function buildCortesiaMap(sales: Sale[]): Record<string, boolean> {
-  const m: Record<string, boolean> = {};
-  for (const s of sales) if (s.isComplimentary) m[s.productId] = true;
-  return m;
-}
-
-function buildPersonalQtyMap(
-  sales: Sale[]
-): Record<string, number> {
-  const m: Record<string, number> = {};
-  for (const s of sales) {
-    if (!s.staffId) continue;
-    const key = `${s.productId}|${s.staffId}`;
-    m[key] = s.quantity;
-  }
-  return m;
-}
-
-function buildPersonalCortesiaMap(
-  sales: Sale[]
-): Record<string, boolean> {
-  const m: Record<string, boolean> = {};
-  for (const s of sales) {
-    if (!s.staffId) continue;
-    if (s.isComplimentary) m[`${s.productId}|${s.staffId}`] = true;
-  }
-  return m;
-}
-
-// ---------------- Main Component ----------------
+// ---------- Main Module ----------
 export function SalesModule() {
-  const [selectedDate, setSelectedDate] = useState<string>(todayDateInput());
-
-  // ---------------- Queries ----------------
-  const productsQuery = useQuery<Product[]>({
-    queryKey: ["products", "active"],
-    queryFn: () => apiFetch<Product[]>("/api/products?active=true"),
-  });
-
-  const staffQuery = useQuery<Staff[]>({
-    queryKey: ["staff", "active"],
-    queryFn: () => apiFetch<Staff[]>("/api/staff?active=true"),
-  });
-
-  const salesPublicoQuery = useQuery<Sale[]>({
-    queryKey: ["sales", selectedDate, "PUBLICO"],
-    queryFn: () =>
-      apiFetch<Sale[]>(
-        `/api/sales?date=${selectedDate}&saleType=PUBLICO`
-      ),
-    enabled: !!selectedDate,
-  });
-
-  const salesPersonalQuery = useQuery<Sale[]>({
-    queryKey: ["sales", selectedDate, "PERSONAL"],
-    queryFn: () =>
-      apiFetch<Sale[]>(
-        `/api/sales?date=${selectedDate}&saleType=PERSONAL`
-      ),
-    enabled: !!selectedDate,
-  });
-
-  const products = useMemo(
-    () =>
-      (productsQuery.data ?? [])
-        .slice()
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [productsQuery.data]
-  );
-
-  const activeStaff = useMemo(
-    () =>
-      (staffQuery.data ?? [])
-        .filter((s) => s.active)
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [staffQuery.data]
-  );
-
-  const isLoadingProducts = productsQuery.isLoading;
-  const isLoadingStaff = staffQuery.isLoading;
-  const isLoadingSales =
-    salesPublicoQuery.isLoading || salesPersonalQuery.isLoading;
-
-  // ---------------- Date handlers ----------------
-  function handlePrevDay() {
-    const d = new Date(selectedDate + "T12:00:00");
-    d.setDate(d.getDate() - 1);
-    setSelectedDate(formatDateInput(d));
-  }
-  function handleNextDay() {
-    const d = new Date(selectedDate + "T12:00:00");
-    d.setDate(d.getDate() + 1);
-    setSelectedDate(formatDateInput(d));
-  }
-  function handleToday() {
-    setSelectedDate(todayDateInput());
-  }
-
-  const dataReady =
-    !isLoadingProducts &&
-    !isLoadingSales &&
-    !!salesPublicoQuery.data &&
-    !!salesPersonalQuery.data;
+  const [activeTab, setActiveTab] = useState<"PUBLICO" | "PERSONAL">("PUBLICO");
+  const [selectedDate, setSelectedDate] = useState(todayDateInput());
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Toolbar fecha */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={handlePrevDay}
-            aria-label="Dia anterior"
-            className="h-9 w-9"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="relative flex items-center">
-            <CalendarDays className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="h-9 w-[170px] pl-9"
-            />
+    <div className="space-y-5">
+      {/* Header con fecha */}
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <Label htmlFor="sale-date" className="text-xs text-muted-foreground">
+              Fecha de venta
+            </Label>
+            <div className="mt-1 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Input
+                id="sale-date"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="h-10 w-auto"
+              />
+            </div>
+            <p className="mt-1 text-xs capitalize text-muted-foreground">
+              {formatDate(selectedDate)}
+            </p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={handleNextDay}
-            aria-label="Dia siguiente"
-            className="h-9 w-9"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleToday}
-            className="h-9"
-          >
-            Hoy
-          </Button>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="hidden text-right text-xs text-muted-foreground sm:block">
-          {new Date(selectedDate + "T12:00:00").toLocaleDateString("es-MX", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-          })}
-        </div>
-      </div>
-
-      {isLoadingProducts || isLoadingStaff || isLoadingSales ? (
-        <Card className="p-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-          <div className="mt-4 space-y-2">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        </Card>
-      ) : dataReady ? (
-        <SalesEditor
-          key={selectedDate}
-          date={selectedDate}
-          products={products}
-          staff={activeStaff}
-          initialPublico={salesPublicoQuery.data as Sale[]}
-          initialPersonal={salesPersonalQuery.data as Sale[]}
-        />
-      ) : (
-        <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-          <AlertCircle className="h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No se pudieron cargar los datos. Intenta de nuevo.
-          </p>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ---------------- Editor (mounted per-date via key) ----------------
-function SalesEditor({
-  date,
-  products,
-  staff,
-  initialPublico,
-  initialPersonal,
-}: {
-  date: string;
-  products: Product[];
-  staff: Staff[];
-  initialPublico: Sale[];
-  initialPersonal: Sale[];
-}) {
-  const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"PUBLICO" | "PERSONAL">("PUBLICO");
-
-  // Draft state initialized from server data (per-date remount via key)
-  const [publicoQtys, setPublicoQtys] = useState<Record<string, number>>(
-    () => buildQtyMap(initialPublico)
-  );
-  const [publicoCortesia, setPublicoCortesia] = useState<
-    Record<string, boolean>
-  >(() => buildCortesiaMap(initialPublico));
-  const [personalQtys, setPersonalQtys] = useState<Record<string, number>>(
-    () => buildPersonalQtyMap(initialPersonal)
-  );
-  const [personalCortesia, setPersonalCortesia] = useState<
-    Record<string, boolean>
-  >(() => buildPersonalCortesiaMap(initialPersonal));
-
-  // ---------------- Save mutation ----------------
-  const saveMutation = useMutation({
-    mutationFn: (payload: {
-      date: string;
-      items: Array<{
-        productId: string;
-        saleType: string;
-        quantity: number;
-        isComplimentary: boolean;
-        staffId?: string;
-      }>;
-    }) =>
-      apiFetch<{
-        summary: {
-          created: number;
-          updated: number;
-          deleted: number;
-          skipped: number;
-        };
-      }>("/api/sales/batch", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
-    onSuccess: (data) => {
-      const s = data?.summary;
-      toast.success(
-        `Ventas guardadas (${s?.created ?? 0} nuevas, ${s?.updated ?? 0} actualizadas, ${s?.deleted ?? 0} eliminadas)`
-      );
-      queryClient.invalidateQueries({ queryKey: ["sales"] });
-    },
-    onError: (e: Error) =>
-      toast.error(e.message || "Error al guardar las ventas"),
-  });
-
-  // ---------------- Derived data ----------------
-  const productsByCategory = useMemo(() => {
-    const map: Record<string, Product[]> = {};
-    for (const cat of CATEGORY_ORDER) map[cat] = [];
-    for (const p of products) {
-      if (!map[p.category]) map[p.category] = [];
-      map[p.category].push(p);
-    }
-    return map;
-  }, [products]);
-
-  const publicoTotals = useMemo(() => {
-    let total = 0;
-    let cortesiasCount = 0;
-    let cortesiasQty = 0;
-    for (const p of products) {
-      const qty = publicoQtys[p.id] || 0;
-      const isComp = !!publicoCortesia[p.id];
-      if (qty > 0) {
-        if (isComp) {
-          cortesiasCount += 1;
-          cortesiasQty += qty;
-        } else {
-          total += qty * p.salePrice;
-        }
-      }
-    }
-    return { total, cortesiasCount, cortesiasQty };
-  }, [products, publicoQtys, publicoCortesia]);
-
-  const personalTotals = useMemo(() => {
-    const perStaff: Record<string, number> = {};
-    const perStaffCortesia: Record<string, number> = {};
-    let grandTotal = 0;
-    for (const p of products) {
-      for (const s of staff) {
-        const key = `${p.id}|${s.id}`;
-        const qty = personalQtys[key] || 0;
-        const isComp = !!personalCortesia[key];
-        if (qty > 0) {
-          if (isComp) {
-            perStaffCortesia[s.id] = (perStaffCortesia[s.id] || 0) + qty;
-          } else {
-            const lineTotal = qty * p.salePrice;
-            perStaff[s.id] = (perStaff[s.id] || 0) + lineTotal;
-            grandTotal += lineTotal;
-          }
-        }
-      }
-    }
-    return { perStaff, perStaffCortesia, grandTotal };
-  }, [products, staff, personalQtys, personalCortesia]);
-
-  // ---------------- Handlers ----------------
-  function setPublicoQty(productId: string, qty: number) {
-    setPublicoQtys((prev) => ({ ...prev, [productId]: qty }));
-  }
-  function togglePublicoCortesia(productId: string, checked: boolean) {
-    setPublicoCortesia((prev) => {
-      const next = { ...prev };
-      if (checked) next[productId] = true;
-      else delete next[productId];
-      return next;
-    });
-  }
-  function setPersonalQty(productId: string, staffId: string, qty: number) {
-    const key = `${productId}|${staffId}`;
-    setPersonalQtys((prev) => ({ ...prev, [key]: qty }));
-  }
-  function togglePersonalCortesia(
-    productId: string,
-    staffId: string,
-    checked: boolean
-  ) {
-    const key = `${productId}|${staffId}`;
-    setPersonalCortesia((prev) => {
-      const next = { ...prev };
-      if (checked) next[key] = true;
-      else delete next[key];
-      return next;
-    });
-  }
-
-  function handleSavePublico() {
-    const items = products.map((p) => ({
-      productId: p.id,
-      saleType: "PUBLICO" as const,
-      quantity: publicoQtys[p.id] || 0,
-      isComplimentary: !!publicoCortesia[p.id],
-    }));
-    saveMutation.mutate({ date, items });
-  }
-
-  function handleSavePersonal() {
-    const items: Array<{
-      productId: string;
-      saleType: string;
-      quantity: number;
-      isComplimentary: boolean;
-      staffId: string;
-    }> = [];
-    for (const p of products) {
-      for (const s of staff) {
-        const key = `${p.id}|${s.id}`;
-        const qty = personalQtys[key] || 0;
-        items.push({
-          productId: p.id,
-          saleType: "PERSONAL",
-          staffId: s.id,
-          quantity: qty,
-          isComplimentary: !!personalCortesia[key],
-        });
-      }
-    }
-    if (items.length === 0) {
-      toast.info("No hay personal ni productos para guardar");
-      return;
-    }
-    saveMutation.mutate({ date, items });
-  }
-
-  function handleClearPublico() {
-    setPublicoQtys({});
-    setPublicoCortesia({});
-    toast.info("Cantidades limpiadas (usa Guardar para aplicar)");
-  }
-  function handleClearPersonal() {
-    setPersonalQtys({});
-    setPersonalCortesia({});
-    toast.info("Cantidades limpiadas (usa Guardar para aplicar)");
-  }
-
-  const isSaving = saveMutation.isPending;
-
-  const totalCortesiasQty =
-    publicoTotals.cortesiasQty +
-    Object.values(personalTotals.perStaffCortesia).reduce(
-      (a, b) => a + b,
-      0
-    );
-  const totalCortesiasItems =
-    publicoTotals.cortesiasCount +
-    Object.values(personalTotals.perStaffCortesia).filter((v) => v > 0)
-      .length;
-
-  // ---------------- Render ----------------
-  return (
-    <div className="space-y-4">
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <SummaryCard
-          label="Venta Publico"
-          value={formatCurrency(publicoTotals.total)}
-          icon={<ShoppingCart className="h-5 w-5" />}
-          accent="amber"
-          subtitle={`${publicoTotals.cortesiasCount} cortesia(s)`}
-        />
-        <SummaryCard
-          label="Venta Personal"
-          value={formatCurrency(personalTotals.grandTotal)}
-          icon={<Users className="h-5 w-5" />}
-          accent="orange"
-          subtitle={`${staff.length} personal`}
-        />
-        <SummaryCard
-          label="Cortesias del dia"
-          value={`${totalCortesiasQty} pzs`}
-          icon={<Gift className="h-5 w-5" />}
-          accent="emerald"
-          subtitle={`${totalCortesiasItems} items`}
-        />
-      </div>
-
-      {/* Tabs */}
       <Tabs
-        value={tab}
-        onValueChange={(v) => setTab(v as "PUBLICO" | "PERSONAL")}
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "PUBLICO" | "PERSONAL")}
       >
-        <TabsList className="h-auto">
-          <TabsTrigger value="PUBLICO" className="px-4 py-1.5">
-            <ShoppingCart className="mr-1.5 h-4 w-4" />
-            Venta Publico
-          </TabsTrigger>
-          <TabsTrigger value="PERSONAL" className="px-4 py-1.5">
-            <Users className="mr-1.5 h-4 w-4" />
-            Venta Personal
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="PUBLICO">Venta al Publico</TabsTrigger>
+          <TabsTrigger value="PERSONAL">Venta a Personal</TabsTrigger>
         </TabsList>
 
         <TabsContent value="PUBLICO" className="mt-4">
-          <PublicoTab
-            products={products}
-            productsByCategory={productsByCategory}
-            qtys={publicoQtys}
-            cortesias={publicoCortesia}
-            totals={publicoTotals}
-            onQtyChange={setPublicoQty}
-            onCortesiaToggle={togglePublicoCortesia}
-            onSave={handleSavePublico}
-            onClear={handleClearPublico}
-            isSaving={isSaving}
+          <SalesPOS
+            key={`publico-${selectedDate}`}
+            saleType="PUBLICO"
+            selectedDate={selectedDate}
           />
         </TabsContent>
 
         <TabsContent value="PERSONAL" className="mt-4">
-          <PersonalTab
-            products={products}
-            staff={staff}
-            qtys={personalQtys}
-            cortesias={personalCortesia}
-            perStaffTotals={personalTotals.perStaff}
-            perStaffCortesia={personalTotals.perStaffCortesia}
-            grandTotal={personalTotals.grandTotal}
-            onQtyChange={setPersonalQty}
-            onCortesiaToggle={togglePersonalCortesia}
-            onSave={handleSavePersonal}
-            onClear={handleClearPersonal}
-            isSaving={isSaving}
+          <SalesPOS
+            key={`personal-${selectedDate}`}
+            saleType="PERSONAL"
+            selectedDate={selectedDate}
           />
         </TabsContent>
       </Tabs>
@@ -590,560 +153,586 @@ function SalesEditor({
   );
 }
 
-// ---------------- Sub-components ----------------
-function SummaryCard({
-  label,
-  value,
-  icon,
-  accent,
-  subtitle,
+// ---------- POS Component ----------
+function SalesPOS({
+  saleType,
+  selectedDate,
 }: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  accent: "amber" | "orange" | "emerald";
-  subtitle?: string;
+  saleType: "PUBLICO" | "PERSONAL";
+  selectedDate: string;
 }) {
-  const accentClasses: Record<
-    typeof accent,
-    { bg: string; icon: string }
-  > = {
-    amber: {
-      bg: "border-amber-200 dark:border-amber-900/50",
-      icon: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  const queryClient = useQueryClient();
+
+  // Catalogo de productos
+  const { data: products = [], isLoading: loadingProducts } = useQuery({
+    queryKey: ["products", "active"],
+    queryFn: () =>
+      apiFetch<Product[]>("/api/products?active=true"),
+  });
+
+  // Personal (solo para PERSONAL)
+  const { data: staffList = [] } = useQuery({
+    queryKey: ["staff", "active"],
+    queryFn: () => apiFetch<Staff[]>("/api/staff?active=true"),
+    enabled: saleType === "PERSONAL",
+  });
+
+  // Ventas del dia
+  const { data: sales = [], isLoading: loadingSales } = useQuery({
+    queryKey: ["sales", selectedDate, saleType],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        date: selectedDate,
+        saleType,
+      });
+      return apiFetch<Sale[]>(`/api/sales?${params.toString()}`);
     },
-    orange: {
-      bg: "border-orange-200 dark:border-orange-900/50",
-      icon: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  });
+
+  // Estado del formulario
+  const [search, setSearch] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [customUnitPrice, setCustomUnitPrice] = useState<number | null>(null);
+  const [isComplimentary, setIsComplimentary] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
+  const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
+
+  // Precio unitario: usa el personalizado si se definio, si no el del producto
+  const unitPrice = isComplimentary
+    ? 0
+    : customUnitPrice !== null
+      ? customUnitPrice
+      : selectedProduct?.salePrice ?? 0;
+
+  // Filtrar productos por busqueda
+  const filteredProducts = useMemo(() => {
+    if (!search.trim()) return products;
+    const q = search.toLowerCase();
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        (p.presentation || "").toLowerCase().includes(q)
+    );
+  }, [products, search]);
+
+  // Agrupar productos por categoria
+  const productsByCategory = useMemo(() => {
+    const groups: Record<string, Product[]> = {};
+    for (const p of filteredProducts) {
+      if (!groups[p.category]) groups[p.category] = [];
+      groups[p.category].push(p);
+    }
+    return groups;
+  }, [filteredProducts]);
+
+  // Totales del dia
+  const totals = useMemo(() => {
+    const total = sales.reduce((sum, s) => sum + (s.isComplimentary ? 0 : s.total), 0);
+    const units = sales.reduce((sum, s) => sum + s.quantity, 0);
+    const complimentary = sales.filter((s) => s.isComplimentary).length;
+    const recordCount = sales.length;
+    return { total, units, complimentary, recordCount };
+  }, [sales]);
+
+  // Mutacion: registrar venta
+  const registerMutation = useMutation({
+    mutationFn: (data: {
+      date: string;
+      productId: string;
+      saleType: string;
+      staffId?: string;
+      quantity: number;
+      unitPrice: number;
+      isComplimentary: boolean;
+    }) => apiFetch<Sale>("/api/sales", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["sales", selectedDate, saleType],
+      });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Venta registrada");
+      // Resetear formulario
+      setSelectedProduct(null);
+      setQuantity(1);
+      setCustomUnitPrice(null);
+      setIsComplimentary(false);
+      if (saleType === "PERSONAL") setSelectedStaffId("");
+      setSearch("");
     },
-    emerald: {
-      bg: "border-emerald-200 dark:border-emerald-900/50",
-      icon: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+    onError: (err) => {
+      const msg =
+        err instanceof ApiError ? err.message : "Error al registrar la venta";
+      toast.error(msg);
     },
+  });
+
+  // Mutacion: eliminar venta
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/sales/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["sales", selectedDate, saleType],
+      });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Venta eliminada");
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Error al eliminar la venta"),
+  });
+
+  const handleRegister = () => {
+    if (!selectedProduct) {
+      toast.error("Selecciona un producto");
+      return;
+    }
+    if (quantity < 1) {
+      toast.error("La cantidad debe ser mayor a 0");
+      return;
+    }
+    if (saleType === "PERSONAL" && !selectedStaffId) {
+      toast.error("Selecciona el empleado");
+      return;
+    }
+
+    registerMutation.mutate({
+      date: selectedDate,
+      productId: selectedProduct.id,
+      saleType,
+      staffId: saleType === "PERSONAL" ? selectedStaffId : undefined,
+      quantity,
+      unitPrice: isComplimentary ? 0 : unitPrice,
+      isComplimentary,
+    });
   };
-  const a = accentClasses[accent];
-  return (
-    <Card className={`gap-2 p-4 ${a.bg}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">
-          {label}
-        </span>
-        <span
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${a.icon}`}
-        >
-          {icon}
-        </span>
-      </div>
-      <div className="text-xl font-bold tabular-nums sm:text-2xl">
-        {value}
-      </div>
-      {subtitle && (
-        <div className="text-xs text-muted-foreground">{subtitle}</div>
-      )}
-    </Card>
-  );
-}
 
-// ---------------- Publico Tab ----------------
-function PublicoTab({
-  products,
-  productsByCategory,
-  qtys,
-  cortesias,
-  totals,
-  onQtyChange,
-  onCortesiaToggle,
-  onSave,
-  onClear,
-  isSaving,
-}: {
-  products: Product[];
-  productsByCategory: Record<string, Product[]>;
-  qtys: Record<string, number>;
-  cortesias: Record<string, boolean>;
-  totals: { total: number; cortesiasCount: number; cortesiasQty: number };
-  onQtyChange: (productId: string, qty: number) => void;
-  onCortesiaToggle: (productId: string, checked: boolean) => void;
-  onSave: () => void;
-  onClear: () => void;
-  isSaving: boolean;
-}) {
-  if (products.length === 0) {
-    return (
-      <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-        <AlertCircle className="h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          No hay productos activos. Crea productos primero en el modulo de
-          Productos.
-        </p>
-      </Card>
-    );
-  }
+  const lineTotal = isComplimentary ? 0 : quantity * unitPrice;
 
   return (
-    <Card className="p-0">
-      <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold">Captura de venta al publico</h3>
-          <p className="text-xs text-muted-foreground">
-            Captura las cantidades vendidas. Las cortesias cuentan como
-            unidades pero no como ingreso.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClear}
-            disabled={isSaving}
-            className="h-9"
-          >
-            Limpiar
-          </Button>
-          <Button
-            type="button"
-            onClick={onSave}
-            disabled={isSaving}
-            className="h-9 bg-amber-600 text-white hover:bg-amber-700"
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            Guardar
-          </Button>
-        </div>
-      </div>
-
-      <div className="max-h-[70vh] overflow-auto">
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card">
-            <TableRow>
-              <TableHead className="min-w-[180px]">Producto</TableHead>
-              <TableHead className="text-right">$ Compra</TableHead>
-              <TableHead className="text-right">$ Venta</TableHead>
-              <TableHead className="text-center">Cantidad</TableHead>
-              <TableHead className="text-right">$ Total</TableHead>
-              <TableHead className="text-center">Cortesia</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {CATEGORY_ORDER.map((cat) => {
-              const list = productsByCategory[cat] ?? [];
-              if (list.length === 0) return null;
-              const catTotal = list.reduce((sum, p) => {
-                const qty = qtys[p.id] || 0;
-                const isComp = !!cortesias[p.id];
-                if (qty > 0 && !isComp) return sum + qty * p.salePrice;
-                return sum;
-              }, 0);
-              return (
-                <CategoryGroup
-                  key={cat}
-                  category={cat}
-                  products={list}
-                  qtys={qtys}
-                  cortesias={cortesias}
-                  onQtyChange={onQtyChange}
-                  onCortesiaToggle={onCortesiaToggle}
-                  catTotal={catTotal}
-                />
-              );
-            })}
-          </TableBody>
-          <TableFooter className="sticky bottom-0 z-10 bg-amber-50 dark:bg-amber-950/40">
-            <TableRow className="border-t-2 border-amber-300 dark:border-amber-800 text-base font-bold">
-              <TableCell colSpan={4} className="text-right uppercase">
-                Total de venta
-              </TableCell>
-              <TableCell className="text-right tabular-nums text-amber-800 dark:text-amber-200">
-                {formatCurrency(totals.total)}
-              </TableCell>
-              <TableCell className="text-center">
-                <Badge
-                  variant="outline"
-                  className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                >
-                  <Gift className="mr-1 h-3 w-3" />
-                  {totals.cortesiasCount} ({totals.cortesiasQty} pzs)
-                </Badge>
-              </TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
-      </div>
-    </Card>
-  );
-}
-
-function CategoryGroup({
-  category,
-  products,
-  qtys,
-  cortesias,
-  onQtyChange,
-  onCortesiaToggle,
-  catTotal,
-}: {
-  category: string;
-  products: Product[];
-  qtys: Record<string, number>;
-  cortesias: Record<string, boolean>;
-  onQtyChange: (productId: string, qty: number) => void;
-  onCortesiaToggle: (productId: string, checked: boolean) => void;
-  catTotal: number;
-}) {
-  return (
-    <>
-      <TableRow
-        className={`${CATEGORY_HEADER_BG[category] ?? "bg-muted/40"} hover:bg-muted/40`}
-      >
-        <TableCell colSpan={4} className="py-2">
-          <Badge
-            variant="outline"
-            className={
-              CATEGORY_COLORS[category] ?? CATEGORY_COLORS.OTROS
-            }
-          >
-            {category}
-          </Badge>
-          <span className="ml-2 text-xs font-medium text-muted-foreground">
-            {products.length} producto{products.length === 1 ? "" : "s"}
-          </span>
-        </TableCell>
-        <TableCell className="py-2 text-right text-xs font-semibold tabular-nums">
-          {formatCurrency(catTotal)}
-        </TableCell>
-        <TableCell />
-      </TableRow>
-      {products.map((p) => {
-        const qty = qtys[p.id] || 0;
-        const isComp = !!cortesias[p.id];
-        const lineTotal = isComp ? 0 : qty * p.salePrice;
-        return (
-          <TableRow key={p.id}>
-            <TableCell className="font-medium">
-              <div className="flex flex-col">
-                <span className="text-sm">{p.name}</span>
-                {p.presentation && (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {p.presentation}
-                  </span>
-                )}
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+      {/* COLUMNA IZQUIERDA: Catalogo + Formulario (2/5) */}
+      <div className="space-y-4 lg:col-span-2">
+        {/* Buscador de productos */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Package className="h-4 w-4 text-amber-600" />
+              Registrar Venta
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Selector de empleado (solo PERSONAL) */}
+            {saleType === "PERSONAL" && (
+              <div>
+                <Label className="text-xs">Empleado</Label>
+                <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+                  <SelectTrigger className="mt-1 h-10">
+                    <SelectValue placeholder="Selecciona empleado..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {staffList.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </TableCell>
-            <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
-              {formatCurrency(p.purchasePrice)}
-            </TableCell>
-            <TableCell className="text-right text-sm font-medium tabular-nums">
-              {formatCurrency(p.salePrice)}
-            </TableCell>
-            <TableCell className="text-center">
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                inputMode="numeric"
-                value={qty === 0 ? "" : String(qty)}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  onQtyChange(p.id, isNaN(v) || v < 0 ? 0 : v);
-                }}
-                placeholder="0"
-                className="h-9 w-16 text-center tabular-nums"
-                aria-label={`Cantidad de ${p.name}`}
-              />
-            </TableCell>
-            <TableCell className="text-right text-sm font-semibold tabular-nums">
-              {isComp ? (
-                <span className="flex flex-col items-end">
-                  <span className="text-xs text-muted-foreground line-through">
-                    {formatCurrency(qty * p.salePrice)}
-                  </span>
-                  <Badge
-                    variant="outline"
-                    className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                  >
-                    CORTESIA
-                  </Badge>
-                </span>
-              ) : (
-                formatCurrency(lineTotal)
-              )}
-            </TableCell>
-            <TableCell className="text-center">
-              <Switch
-                checked={isComp}
-                onCheckedChange={(checked) =>
-                  onCortesiaToggle(p.id, Boolean(checked))
-                }
-                aria-label={`Marcar ${p.name} como cortesia`}
-                className="data-[state=checked]:bg-emerald-600"
-              />
-            </TableCell>
-          </TableRow>
-        );
-      })}
-    </>
-  );
-}
-
-// ---------------- Personal Tab ----------------
-function PersonalTab({
-  products,
-  staff,
-  qtys,
-  cortesias,
-  perStaffTotals,
-  perStaffCortesia,
-  grandTotal,
-  onQtyChange,
-  onCortesiaToggle,
-  onSave,
-  onClear,
-  isSaving,
-}: {
-  products: Product[];
-  staff: Staff[];
-  qtys: Record<string, number>;
-  cortesias: Record<string, boolean>;
-  perStaffTotals: Record<string, number>;
-  perStaffCortesia: Record<string, number>;
-  grandTotal: number;
-  onQtyChange: (productId: string, staffId: string, qty: number) => void;
-  onCortesiaToggle: (
-    productId: string,
-    staffId: string,
-    checked: boolean
-  ) => void;
-  onSave: () => void;
-  onClear: () => void;
-  isSaving: boolean;
-}) {
-  if (products.length === 0) {
-    return (
-      <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-        <AlertCircle className="h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          No hay productos activos para registrar consumo de personal.
-        </p>
-      </Card>
-    );
-  }
-
-  if (staff.length === 0) {
-    return (
-      <Card className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-        <AlertCircle className="h-8 w-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          No hay personal activo. Agrega personal en el modulo de Personal.
-        </p>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="p-0">
-      <div className="flex flex-col gap-2 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-sm font-semibold">
-            Consumo de personal
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Captura las cantidades consumidas por cada miembro del personal.
-            Desliza horizontalmente para ver mas columnas.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClear}
-            disabled={isSaving}
-            className="h-9"
-          >
-            Limpiar
-          </Button>
-          <Button
-            type="button"
-            onClick={onSave}
-            disabled={isSaving}
-            className="h-9 bg-amber-600 text-white hover:bg-amber-700"
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
             )}
-            Guardar
-          </Button>
-        </div>
+
+            {/* Buscador */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar producto..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-10 pl-9"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-accent"
+                  aria-label="Limpiar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Lista de productos agrupados */}
+            <ScrollArea className="h-64 rounded-md border">
+              {loadingProducts ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  Cargando productos...
+                </div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  No se encontraron productos
+                </div>
+              ) : (
+                <div className="p-2">
+                  {Object.entries(productsByCategory).map(([cat, items]) => (
+                    <div key={cat} className="mb-2">
+                      <div className="sticky top-0 z-10 bg-card px-2 py-1 text-xs font-semibold uppercase text-muted-foreground">
+                        {cat} · {items.length}
+                      </div>
+                      <div className="space-y-1">
+                        {items.map((p) => {
+                          const isSelected = selectedProduct?.id === p.id;
+                          return (
+                            <button
+                              key={p.id}
+                              onClick={() => setSelectedProduct(p)}
+                              className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                                isSelected
+                                  ? "border-amber-500 bg-amber-50 dark:bg-amber-900/20"
+                                  : "border-transparent hover:bg-accent"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium">{p.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {p.presentation || p.category}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <div className="font-semibold text-amber-700 dark:text-amber-400">
+                                  {formatCurrency(p.salePrice)}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        {/* Formulario de captura */}
+        {selectedProduct && (
+          <Card className="border-amber-500/50">
+            <CardContent className="space-y-3 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 shrink-0 text-amber-600" />
+                    <span className="truncate font-semibold">{selectedProduct.name}</span>
+                  </div>
+                  <Badge className={`mt-1 ${CATEGORY_COLORS[selectedProduct.category] || ""}`}>
+                    {selectedProduct.category}
+                  </Badge>
+                </div>
+                <button
+                  onClick={() => setSelectedProduct(null)}
+                  className="rounded p-1 text-muted-foreground hover:bg-accent"
+                  aria-label="Quitar producto"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Cantidad */}
+              <div>
+                <Label className="text-xs">Cantidad</Label>
+                <div className="mt-1 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                    disabled={quantity <= 1}
+                    aria-label="Restar"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={quantity}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setQuantity(isNaN(v) || v < 1 ? 1 : v);
+                    }}
+                    className="h-10 text-center text-lg font-semibold"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() => setQuantity((q) => q + 1)}
+                    aria-label="Sumar"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Precio unitario */}
+              <div>
+                <Label className="text-xs">
+                  Precio unitario{" "}
+                  {customUnitPrice !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomUnitPrice(null)}
+                      className="ml-1 text-amber-600 underline hover:text-amber-700"
+                    >
+                      restaurar
+                    </button>
+                  )}
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={unitPrice}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setCustomUnitPrice(isNaN(v) || v < 0 ? 0 : v);
+                  }}
+                  className="mt-1 h-10"
+                  disabled={isComplimentary}
+                />
+              </div>
+
+              {/* Cortesia */}
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Gift className="h-4 w-4 text-purple-600" />
+                  <div>
+                    <div className="text-sm font-medium">Cortesia</div>
+                    <div className="text-xs text-muted-foreground">
+                      Cuenta como unidad, sin costo
+                    </div>
+                  </div>
+                </div>
+                <Switch
+                  checked={isComplimentary}
+                  onCheckedChange={setIsComplimentary}
+                />
+              </div>
+
+              {/* Total de la linea */}
+              <div className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
+                <span className="text-sm font-medium text-muted-foreground">Total</span>
+                <span className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                  {formatCurrency(lineTotal)}
+                </span>
+              </div>
+
+              {/* Boton registrar */}
+              <Button
+                onClick={handleRegister}
+                disabled={registerMutation.isPending}
+                className="h-12 w-full bg-amber-600 text-base font-semibold hover:bg-amber-700"
+              >
+                {registerMutation.isPending ? (
+                  "Registrando..."
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-5 w-5" />
+                    Registrar Venta
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      <div className="max-h-[70vh] overflow-auto">
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card">
-            <TableRow>
-              <TableHead className="sticky left-0 z-20 min-w-[160px] bg-card">
-                Producto
-              </TableHead>
-              <TableHead className="text-right">$ Venta</TableHead>
-              {staff.map((s) => (
-                <TableHead
-                  key={s.id}
-                  className="min-w-[110px] text-center"
-                >
-                  {s.name}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {CATEGORY_ORDER.flatMap((cat) => {
-              const list = products.filter((p) => p.category === cat);
-              if (list.length === 0) return [];
-              const headerRow = (
-                <TableRow
-                  key={`cat-${cat}`}
-                  className={`${CATEGORY_HEADER_BG[cat] ?? "bg-muted/40"} hover:bg-muted/40`}
-                >
-                  <TableCell
-                    colSpan={2 + staff.length}
-                    className="py-2"
-                  >
-                    <Badge
-                      variant="outline"
-                      className={
-                        CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.OTROS
-                      }
-                    >
-                      {cat}
-                    </Badge>
-                    <span className="ml-2 text-xs font-medium text-muted-foreground">
-                      {list.length} producto{list.length === 1 ? "" : "s"}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              );
-              const productRows = list.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="sticky left-0 z-10 min-w-[160px] bg-card font-medium">
-                    <div className="flex flex-col">
-                      <span className="text-sm">{p.name}</span>
-                      {p.presentation && (
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          {p.presentation}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right text-xs font-medium tabular-nums">
-                    {formatCurrency(p.salePrice)}
-                  </TableCell>
-                  {staff.map((s) => {
-                    const key = `${p.id}|${s.id}`;
-                    const qty = qtys[key] || 0;
-                    const isComp = !!cortesias[key];
-                    return (
-                      <TableCell
-                        key={s.id}
-                        className="text-center align-top"
-                      >
-                        <div className="flex flex-col items-center gap-1">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputMode="numeric"
-                            value={qty === 0 ? "" : String(qty)}
-                            onChange={(e) => {
-                              const v = parseInt(e.target.value, 10);
-                              onQtyChange(
-                                p.id,
-                                s.id,
-                                isNaN(v) || v < 0 ? 0 : v
-                              );
-                            }}
-                            placeholder="0"
-                            className="h-9 w-16 text-center tabular-nums"
-                            aria-label={`Cantidad de ${p.name} para ${s.name}`}
-                          />
-                          {qty > 0 && (
-                            <label className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground">
-                              <Checkbox
-                                checked={isComp}
-                                onCheckedChange={(checked) =>
-                                  onCortesiaToggle(
-                                    p.id,
-                                    s.id,
-                                    Boolean(checked)
-                                  )
-                                }
-                                className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
-                              />
-                              C
-                            </label>
+      {/* COLUMNA DERECHA: Ventas del dia (3/5) */}
+      <div className="lg:col-span-3">
+        <Card className="flex h-full flex-col">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShoppingCart className="h-4 w-4 text-amber-600" />
+                Ventas del Dia
+              </CardTitle>
+              <Badge variant="outline" className="capitalize">
+                {saleType === "PUBLICO" ? "Publico" : "Personal"}
+              </Badge>
+            </div>
+          </CardHeader>
+
+          {/* KPIs del dia */}
+          <div className="grid grid-cols-3 gap-2 px-6 pb-3">
+            <div className="rounded-lg border bg-amber-50 p-3 text-center dark:bg-amber-900/20">
+              <div className="text-xs text-muted-foreground">Total</div>
+              <div className="mt-1 text-lg font-bold text-amber-700 dark:text-amber-400">
+                {formatCurrency(totals.total)}
+              </div>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <div className="text-xs text-muted-foreground">Productos</div>
+              <div className="mt-1 text-lg font-bold">{totals.units}</div>
+            </div>
+            <div className="rounded-lg border p-3 text-center">
+              <div className="text-xs text-muted-foreground">Cortesias</div>
+              <div className="mt-1 text-lg font-bold text-purple-600">
+                {totals.complimentary}
+              </div>
+            </div>
+          </div>
+
+          <CardContent className="flex-1 p-0">
+            {loadingSales ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                Cargando ventas...
+              </div>
+            ) : sales.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <ShoppingCart className="h-10 w-10 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">
+                  No hay ventas registradas para este dia.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Selecciona un producto y registra la primera venta.
+                </p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[calc(100vh-22rem)] min-h-[300px]">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-card">
+                    <TableRow>
+                      <TableHead className="w-10">#</TableHead>
+                      <TableHead>Producto</TableHead>
+                      {saleType === "PERSONAL" && <TableHead>Empleado</TableHead>}
+                      <TableHead className="text-center">Cant</TableHead>
+                      <TableHead className="text-right">P. Unit</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="w-10"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sales.map((sale, idx) => (
+                      <TableRow key={sale.id}>
+                        <TableCell className="text-muted-foreground">
+                          {idx + 1}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">
+                                {sale.product.name}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Badge
+                                  variant="outline"
+                                  className={`h-4 px-1 text-[10px] ${CATEGORY_COLORS[sale.product.category] || ""}`}
+                                >
+                                  {sale.product.category}
+                                </Badge>
+                                {sale.isComplimentary && (
+                                  <Badge className="h-4 px-1 text-[10px] bg-purple-500">
+                                    <Gift className="mr-0.5 h-2.5 w-2.5" /> Cortesia
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        {saleType === "PERSONAL" && (
+                          <TableCell className="text-sm">
+                            {sale.staff?.name || (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-center font-medium">
+                          {sale.quantity}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {sale.isComplimentary
+                            ? "-"
+                            : formatCurrency(sale.unitPrice)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {sale.isComplimentary ? (
+                            <span className="text-purple-600">$0</span>
+                          ) : (
+                            formatCurrency(sale.total)
                           )}
-                        </div>
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ));
-              return [headerRow, ...productRows];
-            })}
-          </TableBody>
-          <TableFooter className="sticky bottom-0 z-10 bg-amber-50 dark:bg-amber-950/40">
-            <TableRow className="border-t-2 border-amber-300 dark:border-amber-800 text-sm font-bold">
-              <TableCell
-                colSpan={2}
-                className="sticky left-0 z-10 bg-amber-50 dark:bg-amber-950/40 uppercase"
-              >
-                Total por personal
-              </TableCell>
-              {staff.map((s) => (
-                <TableCell
-                  key={s.id}
-                  className="text-center align-top"
-                >
-                  <div className="flex flex-col items-center gap-0.5">
-                    <span className="tabular-nums text-amber-800 dark:text-amber-200">
-                      {formatCurrency(perStaffTotals[s.id] || 0)}
-                    </span>
-                    {perStaffCortesia[s.id] > 0 && (
-                      <Badge
-                        variant="outline"
-                        className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                      >
-                        <Gift className="mr-1 h-3 w-3" />
-                        {perStaffCortesia[s.id]} c
-                      </Badge>
-                    )}
-                  </div>
-                </TableCell>
-              ))}
-            </TableRow>
-            <TableRow className="bg-amber-100 dark:bg-amber-900/50 text-base font-bold">
-              <TableCell
-                colSpan={2}
-                className="sticky left-0 z-10 bg-amber-100 dark:bg-amber-900/50 uppercase"
-              >
-                Gran total
-              </TableCell>
-              <TableCell
-                colSpan={staff.length}
-                className="text-right tabular-nums text-amber-900 dark:text-amber-100"
-              >
-                {formatCurrency(grandTotal)}
-              </TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/20"
+                            onClick={() => setDeleteTarget(sale)}
+                            aria-label="Eliminar venta"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            )}
+          </CardContent>
+
+          {/* Total acumulado */}
+          {sales.length > 0 && (
+            <div className="border-t bg-amber-50 p-4 dark:bg-amber-900/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-amber-600" />
+                  <span className="font-semibold">TOTAL DEL DIA</span>
+                </div>
+                <span className="text-2xl font-bold text-amber-700 dark:text-amber-400">
+                  {formatCurrency(totals.total)}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                <span>{totals.recordCount} ventas registradas</span>
+                <span>{totals.units} unidades · {totals.complimentary} cortesias</span>
+              </div>
+            </div>
+          )}
+        </Card>
       </div>
-    </Card>
+
+      {/* Dialog de confirmacion de borrado */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar venta</AlertDialogTitle>
+            <AlertDialogDescription>
+              Seguro que deseas eliminar la venta de{" "}
+              <strong>{deleteTarget?.product.name}</strong> (
+              {deleteTarget?.quantity} u.)? Esta accion no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              className="bg-rose-600 hover:bg-rose-700"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
