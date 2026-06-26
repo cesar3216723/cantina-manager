@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { startOfDay, endOfDay } from "@/lib/format";
+import { randomUUID } from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -71,10 +72,11 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/sales
-// Acepta un objeto (una venta) o un array (lote de ventas).
-// Cada venta: { date, productId, saleType?, staffId?, quantity?, unitPrice?, purchasePrice?, isComplimentary? }
+// Acepta un objeto (una venta) o un array (lote/cuenta con varios productos).
+// Si es un lote, se genera un ticketId comun para agruparlos como una sola cuenta.
+// Cada venta: { date, productId, saleType?, staffId?, quantity?, unitPrice?, purchasePrice?, isComplimentary?, ticketId? }
 // Si no viene unitPrice/purchasePrice, se obtienen del producto actual.
-// total = quantity * unitPrice
+// total = quantity * unitPrice (0 si es cortesia)
 type SaleInput = {
   date?: string;
   productId?: string;
@@ -84,9 +86,10 @@ type SaleInput = {
   unitPrice?: number;
   purchasePrice?: number;
   isComplimentary?: boolean;
+  ticketId?: string;
 };
 
-async function buildSaleData(item: SaleInput) {
+async function buildSaleData(item: SaleInput, ticketId: string) {
   if (!item.productId || typeof item.productId !== "string") {
     throw new Error("El producto es obligatorio");
   }
@@ -97,11 +100,9 @@ async function buildSaleData(item: SaleInput) {
     throw new Error("Producto no encontrado");
   }
 
-  // Fecha: usar mediodia para evitar problemas de zona horaria
   let date: Date;
   const raw = typeof item.date === "string" && item.date ? item.date : "";
   if (raw) {
-    // Aceptar tanto "YYYY-MM-DD" como ISO completo
     const normalized = raw.length === 10 ? raw + "T12:00:00" : raw;
     date = new Date(normalized);
     if (isNaN(date.getTime())) date = new Date();
@@ -109,8 +110,7 @@ async function buildSaleData(item: SaleInput) {
     date = new Date();
   }
 
-  const saleType =
-    item.saleType === "PERSONAL" ? "PERSONAL" : "PUBLICO";
+  const saleType = item.saleType === "PERSONAL" ? "PERSONAL" : "PUBLICO";
 
   const staffId =
     saleType === "PERSONAL" && typeof item.staffId === "string" && item.staffId
@@ -136,10 +136,12 @@ async function buildSaleData(item: SaleInput) {
       ? item.purchasePrice
       : product.purchasePrice;
 
-  const total = quantity * unitPrice;
+  const isComplimentary = Boolean(item.isComplimentary);
+  const total = isComplimentary ? 0 : quantity * unitPrice;
 
   return {
     date,
+    ticketId,
     productId: product.id,
     saleType,
     staffId,
@@ -147,7 +149,7 @@ async function buildSaleData(item: SaleInput) {
     unitPrice,
     purchasePrice,
     total,
-    isComplimentary: Boolean(item.isComplimentary),
+    isComplimentary,
   };
 }
 
@@ -155,9 +157,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const items: SaleInput[] = Array.isArray(body)
-      ? body
-      : [body];
+    const items: SaleInput[] = Array.isArray(body) ? body : [body];
 
     if (items.length === 0) {
       return NextResponse.json(
@@ -166,22 +166,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Lote: crea todos en paralelo
+    // Generar un ticketId comun para todo el lote (la cuenta)
+    const ticketId =
+      (typeof body === "object" && !Array.isArray(body) && body.ticketId) ||
+      randomUUID();
+
+    // Lote: crea todos en paralelo con el mismo ticketId
     if (items.length > 1) {
       const results = await Promise.all(
         items.map(async (item) => {
-          const data = await buildSaleData(item);
+          const data = await buildSaleData(item, ticketId);
           return db.sale.create({
             data,
             include: { product: true, staff: true },
           });
         })
       );
-      return NextResponse.json(results, { status: 201 });
+      return NextResponse.json(
+        { ticketId, sales: results, count: results.length },
+        { status: 201 }
+      );
     }
 
     // Registro unico
-    const data = await buildSaleData(items[0]);
+    const data = await buildSaleData(items[0], ticketId);
     const sale = await db.sale.create({
       data,
       include: { product: true, staff: true },

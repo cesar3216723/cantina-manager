@@ -50,9 +50,11 @@ model Staff {
 // ============================================================
 
 // Venta (publica o personal). isComplimentary = cortesia
+// ticketId agrupa varias ventas que pertenecen a la misma cuenta/comanda de un cliente
 model Sale {
   id             String   @id @default(cuid())
   date           DateTime
+  ticketId       String?  // agrupa productos de una misma cuenta
   productId      String
   product        Product  @relation(fields: [productId], references: [id])
   saleType       String   @default("PUBLICO") // PUBLICO, PERSONAL
@@ -69,6 +71,7 @@ model Sale {
   @@index([date])
   @@index([saleType])
   @@index([productId])
+  @@index([ticketId])
 }
 
 // Venta de fichas (tokens) por personal, con comision
