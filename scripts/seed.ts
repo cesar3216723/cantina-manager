@@ -1,6 +1,10 @@
-import { db } from "@/lib/db"
+import { db } from "@/lib/db";
 
-// Productos extraidos del Excel del usuario
+// ============================================================
+// Seed: Carga inicial de productos, personal y datos demo
+// Ejecutar con: bun run scripts/seed.ts
+// ============================================================
+
 const PRODUCTS = [
   // Cervezas MEDIA
   { name: "MEDIA LAGER", category: "CERVEZA", presentation: "MEDIA", purchasePrice: 15, salePrice: 30, sortOrder: 1 },
@@ -72,9 +76,79 @@ const STAFF = [
   { name: "VIKY", salary: 0, sortOrder: 5 },
 ]
 
+// Generador de ventas demo realistas para 14 dias
+function generateDemoSales(products: any[], dates: Date[]) {
+  const sales: any[] = []
+  // Patrones de productos mas vendidos (con probabilidad)
+  const popularItems = [
+    { idx: 0, weight: 5 },  // MEDIA LAGER
+    { idx: 2, weight: 5 },  // MEDIA VICTORIA
+    { idx: 3, weight: 4 },  // MEDIA CORONA
+    { idx: 1, weight: 3 },  // MEDIA AZUL
+    { idx: 4, weight: 3 },  // MEGA LAGER
+    { idx: 8, weight: 2 },  // MEGA CORONA
+    { idx: 17, weight: 2 }, // PROMO MEGA CORONA
+    { idx: 12, weight: 1 }, // CUBO MEDIA VICTORIA
+    { idx: 28, weight: 4 }, // CIGARRO
+    { idx: 29, weight: 4 }, // CACAHUATE
+    { idx: 30, weight: 2 }, // CHICARRON
+    { idx: 37, weight: 3 }, // COCA 355
+    { idx: 38, weight: 2 }, // PEÑAFIEL
+    { idx: 41, weight: 2 }, // BOOS
+    { idx: 42, weight: 1 }, // NEWMIX PALOMA
+  ]
+
+  let ticketCounter = 0
+
+  for (const date of dates) {
+    // Fin de semana vende mas
+    const dayOfWeek = date.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+    const ticketsPerDay = isWeekend ? 8 + Math.floor(Math.random() * 6) : 4 + Math.floor(Math.random() * 5)
+
+    for (let t = 0; t < ticketsPerDay; t++) {
+      ticketCounter++
+      const ticketId = `demo-ticket-${ticketCounter}`
+      const itemsPerTicket = 1 + Math.floor(Math.random() * 4) // 1-4 productos por cuenta
+
+      for (let i = 0; i < itemsPerTicket; i++) {
+        // Seleccionar producto por peso
+        const totalWeight = popularItems.reduce((s, p) => s + p.weight, 0)
+        let r = Math.random() * totalWeight
+        let selected = popularItems[0]
+        for (const p of popularItems) {
+          r -= p.weight
+          if (r <= 0) { selected = p; break }
+        }
+        const prod = products[selected.idx]
+        if (!prod) continue
+
+        const quantity = 1 + Math.floor(Math.random() * 3)
+        const isComplimentary = Math.random() < 0.05 // 5% cortesias
+        const unitPrice = prod.salePrice
+        const total = isComplimentary ? 0 : quantity * unitPrice
+
+        sales.push({
+          date,
+          ticketId,
+          productId: prod.id,
+          saleType: "PUBLICO",
+          quantity,
+          unitPrice,
+          purchasePrice: prod.purchasePrice,
+          total,
+          isComplimentary,
+        })
+      }
+    }
+  }
+  return sales
+}
+
 async function main() {
   console.log("Iniciando seed...")
 
+  // Limpiar tablas
   await db.sale.deleteMany()
   await db.tokenSale.deleteMany()
   await db.dailyInventory.deleteMany()
@@ -85,60 +159,60 @@ async function main() {
   await db.product.deleteMany()
   await db.staff.deleteMany()
 
+  // Crear productos
   for (const p of PRODUCTS) {
     await db.product.create({ data: p })
   }
   console.log(`${PRODUCTS.length} productos creados`)
 
+  // Crear personal
   for (const s of STAFF) {
     await db.staff.create({ data: s })
   }
-  console.log(`${STAFF.length} personal creado`)
+  console.log(`${STAFF.length} empleados creados`)
 
-  // Datos demo para 7 dias
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
+  // Generar ventas demo para los ultimos 14 dias
   const products = await db.product.findMany({ orderBy: { sortOrder: "asc" } })
+  const today = new Date()
+  today.setHours(12, 0, 0, 0)
 
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(date.getDate() - i)
-
-    const sampleSales = [
-      { idx: 0, qty: 3 + Math.floor(Math.random() * 4) },
-      { idx: 2, qty: 4 + Math.floor(Math.random() * 4) },
-      { idx: 3, qty: 3 + Math.floor(Math.random() * 5) },
-      { idx: 4, qty: 1 + Math.floor(Math.random() * 3) },
-      { idx: 8, qty: 1 + Math.floor(Math.random() * 3) },
-      { idx: 12, qty: Math.floor(Math.random() * 2) },
-      { idx: 17, qty: Math.floor(Math.random() * 3) },
-      { idx: 28, qty: 3 + Math.floor(Math.random() * 5) },
-      { idx: 29, qty: 4 + Math.floor(Math.random() * 4) },
-      { idx: 30, qty: 1 + Math.floor(Math.random() * 3) },
-      { idx: 37, qty: 2 + Math.floor(Math.random() * 4) },
-      { idx: 38, qty: 1 + Math.floor(Math.random() * 3) },
-    ]
-
-    for (const s of sampleSales) {
-      const prod = products[s.idx]
-      if (!prod) continue
-      await db.sale.create({
-        data: {
-          date,
-          productId: prod.id,
-          saleType: "PUBLICO",
-          quantity: s.qty,
-          unitPrice: prod.salePrice,
-          purchasePrice: prod.purchasePrice,
-          total: s.qty * prod.salePrice,
-          isComplimentary: false,
-        },
-      })
-    }
+  const dates: Date[] = []
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    dates.push(d)
   }
 
-  console.log("Ventas demo creadas (7 dias)")
+  const demoSales = generateDemoSales(products, dates)
+  for (const sale of demoSales) {
+    await db.sale.create({ data: sale })
+  }
+  console.log(`${demoSales.length} ventas demo creadas en ${dates.length} dias`)
+
+  // Crear algunos gastos demo
+  const expenses = [
+    { date: dates[13], description: "Compra de cervezas", amount: 2500, paymentMethod: "EFECTIVO", category: "COMPRA" },
+    { date: dates[13], description: "Pago de luz", amount: 850, paymentMethod: "EFECTIVO", category: "SERVICIO" },
+    { date: dates[10], description: "Compra de botanas", amount: 1200, paymentMethod: "EFECTIVO", category: "COMPRA" },
+    { date: dates[7], description: "Gas", amount: 450, paymentMethod: "EFECTIVO", category: "SERVICIO" },
+    { date: dates[3], description: "Reparacion refrigerador", amount: 1500, paymentMethod: "EFECTIVO", category: "GENERAL" },
+  ]
+  for (const e of expenses) {
+    await db.expense.create({ data: e })
+  }
+  console.log(`${expenses.length} gastos demo creados`)
+
+  // Crear algunos creditos demo
+  const credits = [
+    { date: dates[10], customerName: "Jorge Martinez", description: "2 media azul ficha Isela", amount: 240, status: "PENDIENTE" },
+    { date: dates[7], customerName: "German Ruiz", description: "1 Mega Roja", amount: 60, status: "PENDIENTE" },
+    { date: dates[3], customerName: "Carlos Vega", description: "Cuenta del dia", amount: 350, status: "PAGADO", paidDate: dates[2], paymentMethod: "EFECTIVO" },
+  ]
+  for (const c of credits) {
+    await db.credit.create({ data: c })
+  }
+  console.log(`${credits.length} creditos demo creados`)
+
   console.log("Seed completado!")
 }
 
