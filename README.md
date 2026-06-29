@@ -45,11 +45,17 @@ Una aplicación web responsive que digitaliza y automatiza todas las operaciones
 │   Productos, Personal, Gastos, Créditos,            │
 │   Corte de Caja, Reportes                           │
 └──────────────────────┬──────────────────────────────┘
-                       │ HTTP / REST
+                       │ HTTP / REST (Conectado a NextAuth)
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│       NEXT.JS 16 MIDDLEWARE & SECURITY HEADERS      │
+│  Control de acceso perimetral. Bloqueo 401 a APIs.  │
+└──────────────────────┬──────────────────────────────┘
+                       │
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │              NEXT.JS 16 API ROUTES                   │
-│              27 endpoints REST                       │
+│              27 endpoints REST protegidos            │
 │                                                      │
 │  /api/sales  /api/products  /api/staff  /api/reports│
 │  /api/inventory  /api/expenses  /api/credits        │
@@ -59,26 +65,27 @@ Una aplicación web responsive que digitaliza y automatiza todas las operaciones
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │           PostgreSQL (Supabase)                      │
-│              9 modelos relacionales                  │
+│   Supavisor Connection Pooling (aws-1)               │
 └─────────────────────────────────────────────────────┘
 ```
 
-Arquitectura **full-stack monolítica**: frontend y backend en el mismo proyecto Next.js, ideal para proyectos pequeños sin necesidad de microservicios.
+Arquitectura **full-stack monolítica** y asegurada. El frontend y backend residen en Next.js, ahora con una capa perimetral de autenticación y cabeceras de respuesta protegidas.
 
 ## 🛠️ Stack Tecnológico
 
 | Capa | Tecnología | Propósito |
 |------|-----------|-----------|
 | **Framework** | Next.js 16 (App Router) | Rendering, routing y API endpoints |
-| **Lenguaje** | TypeScript 5 | Tipado estático, prevención de errores |
+| **Seguridad** | NextAuth.js + BcryptJS | Autenticación basada en cookies HTTP-only seguras |
+| **Lenguaje** | TypeScript 5 | Tipado estático (Estricto en compilación) |
 | **Estilos** | Tailwind CSS 4 + shadcn/ui | Sistema de diseño consistente |
 | **Estado** | TanStack Query | Cache y sincronización con el servidor |
-| **Base de datos** | PostgreSQL (Supabase) | Almacenamiento persistente en la nube |
+| **Base de datos** | PostgreSQL (Supabase) | Almacenamiento con pooler de conexiones (Supavisor) |
 | **ORM** | Prisma 6 | Capa de acceso a datos tipada |
 | **Gráficos** | Recharts | Visualizaciones para dashboard y reportes |
 | **Iconos** | Lucide React | Iconografía moderna |
 | **Notificaciones** | Sonner | Toasts de feedback al usuario |
-| **Runtime** | Bun | Ejecución ultrarrápida de JavaScript |
+| **Runtime** | Bun / Node.js | Ejecución del backend y frontend |
 
 ## 📊 Modelo de Datos
 
@@ -97,9 +104,25 @@ StaffPayment     ← pagos a empleados (sueldo + comisión - consumo)
 DailyCashClosing ← corte de caja diario
 ```
 
-### Concepto clave: `ticketId`
+## 🔒 Seguridad e Infraestructura (Nuevos Cambios)
 
-El campo `ticketId` en el modelo `Sale` agrupa todos los productos de una misma cuenta/comanda. Cuando un cliente consume 3 cervezas + 2 botanas, se crean 5 registros `Sale` que comparten el mismo `ticketId`, permitiendo cobrar la cuenta completa de una sola vez y consultar su detalle posteriormente.
+Tras realizar una auditoría de ciberseguridad y arquitectura, implementamos las siguientes medidas de hardening para habilitar el uso seguro en producción:
+
+### 1. Autenticación y Autorización (NextAuth.js)
+- **Acceso Restringido**: Middleware global protege todas las páginas internas (`/dashboard`, `/inventario`, etc.) y las APIs del backend (`/api/*`), redirigiendo a `/login` si no se detecta sesión.
+- **Validación Segura**: Inicio de sesión mediante el proveedor `Credentials` de NextAuth. Las contraseñas son validadas contra hashes seguros generados con **BcryptJS**.
+- **Credenciales en Entorno**: El usuario administrador y su hash de contraseña se manejan en variables del entorno del servidor y nunca se exponen al cliente.
+
+### 2. Cabeceras HTTP de Seguridad
+Configuración de cabeceras HTTP restrictivas en `next.config.ts` para mitigar ataques comunes de la web:
+- **`X-Frame-Options: DENY`**: Evita ataques de clickjacking denegando la renderización de la app dentro de un iframe.
+- **`X-Content-Type-Options: nosniff`**: Previene ataques de MIME-sniffing.
+- **`Referrer-Policy: strict-origin-when-cross-origin`**: Protege la fuga de datos del referrer en peticiones cross-origin.
+
+### 3. Hardening en Compilación y Ejecución
+- **TypeScript Estricto**: Cambiado `ignoreBuildErrors: false` en `next.config.ts` para garantizar integridad de tipos en builds de producción.
+- **React Strict Mode**: Reactivado en `next.config.ts` para mitigar efectos secundarios no deseados en desarrollo y renderizado.
+- **Pooling del Servidor**: Configurada la URL de pooler transaccional de Supabase (`aws-1-us-east-1` en puerto `6543`) con directrices `pgbouncer=true&connection_limit=1` para evitar la saturación de conexiones en entornos Serverless (Vercel).
 
 ## 🚀 Características
 
@@ -124,24 +147,17 @@ El campo `ticketId` en el modelo `Sale` agrupa todos los productos de una misma 
 - Valoración del inventario a precio de compra y venta
 - Observaciones por producto
 
-### Reportes
-- Análisis por rango de fechas con presets rápidos (hoy, semana, mes, 30 días)
-- 5 vistas: ventas por día, top productos, por categoría, utilidad, personal
-- Gráficos interactivos (barras, pie, composed)
-- Exportación a CSV
-- Cálculo de márgenes de utilidad
-
 ## 📦 Instalación Local
 
 ### Prerrequisitos
 - [Node.js](https://nodejs.org/) 18+ o [Bun](https://bun.sh/) runtime
-- Una base de datos PostgreSQL (recomendado: [Supabase](https://supabase.com/) gratis)
+- Una base de datos PostgreSQL (recomendado: [Supabase](https://supabase.com/))
 
 ### Pasos
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/TU_USUARIO/cantina-manager.git
+git clone https://github.com/cesar3216723/cantina-manager.git
 cd cantina-manager
 
 # 2. Instalar dependencias
@@ -149,12 +165,12 @@ bun install
 
 # 3. Configurar variables de entorno
 cp .env.example .env
-# Editar .env con tu URL de PostgreSQL de Supabase
+# Configurar URLs de Supabase, AUTH_SECRET y credenciales de administrador (ADMIN_USERNAME y ADMIN_PASSWORD_HASH)
 
 # 4. Crear la base de datos (crea todas las tablas)
 bun run db:push
 
-# 5. Cargar datos iniciales (productos, empleados y datos demo)
+# 5. Cargar datos iniciales
 bun run seed
 
 # 6. Iniciar el servidor de desarrollo
@@ -163,30 +179,15 @@ bun run dev
 
 La aplicación estará disponible en `http://localhost:3000`
 
-### Para desarrollo local con SQLite (sin Supabase)
+## 🌐 Variables de Entorno Requeridas en Producción (Vercel)
 
-Si prefieres no configurar PostgreSQL para desarrollo local:
-
-1. Cambia `provider = "postgresql"` a `provider = "sqlite"` en `prisma/schema.prisma`
-2. Cambia `DATABASE_URL` en `.env` a `file:./db/custom.db`
-3. Ejecuta `bun run db:push && bun run seed`
-
-## 🌐 Deploy
-
-### Vercel (recomendado)
-
-1. Sube el repositorio a GitHub
-2. En [vercel.com](https://vercel.com), importa el repositorio
-3. Configura las variables de entorno:
-   - `DATABASE_URL`: tu URL de PostgreSQL de Supabase
-4. Deploy automático ✅
-
-### Supabase (base de datos)
-
-1. Crea un proyecto en [supabase.com](https://supabase.com)
-2. Ve a Project Settings → Database
-3. Copia la Connection String (formato pooling)
-4. Úsala como `DATABASE_URL` en Vercel
+| Variable | Propósito | Ejemplo / Formato |
+|----------|-----------|-------------------|
+| `DATABASE_URL` | URL de conexión al Transaction Pooler (Supavisor) | `postgresql://...supabase.com:6543/postgres?pgbouncer=true&connection_limit=1` |
+| `DIRECT_URL` | Conexión directa a Supabase (para migraciones/Prisma CLI) | `postgresql://...supabase.co:5432/postgres` |
+| `AUTH_SECRET` | Clave secreta para firmar tokens JWT | Hash aleatorio seguro de 32 bytes |
+| `ADMIN_USERNAME` | Identificador de inicio de sesión | `NUBIA` |
+| `ADMIN_PASSWORD_HASH` | Hash Bcrypt (Salt rounds: 12) de la clave de acceso | `$2b$12$...` |
 
 ## 📁 Estructura del Proyecto
 
@@ -194,58 +195,23 @@ Si prefieres no configurar PostgreSQL para desarrollo local:
 cantina-manager/
 ├── prisma/
 │   └── schema.prisma          # 9 modelos de base de datos
-├── scripts/
-│   └── seed.ts                # Carga inicial de datos
 ├── src/
 │   ├── app/
-│   │   ├── api/               # 27 endpoints REST
-│   │   │   ├── sales/         # + tickets/[ticketId]
-│   │   │   ├── products/
-│   │   │   ├── staff/         # + tokens, payments
-│   │   │   ├── inventory/     # + batch, init
-│   │   │   ├── expenses/
-│   │   │   ├── credits/
-│   │   │   ├── cash-closing/  # + calculate
-│   │   │   ├── dashboard/
-│   │   │   └── reports/
-│   │   ├── layout.tsx
+│   │   ├── api/               # APIs Rest seguras con NextAuth
+│   │   ├── login/             # Pantalla de Login
+│   │   ├── layout.tsx         # Providers Session y estilos
 │   │   └── page.tsx           # SPA con sidebar
 │   ├── components/
-│   │   ├── ui/                # 48 componentes shadcn/ui
-│   │   ├── modules/           # 9 módulos de la app
-│   │   ├── layout/            # Sidebar y navegación
-│   │   └── providers.tsx      # ThemeProvider + QueryClient
-│   └── lib/
-│       ├── db.ts              # Cliente de Prisma
-│       ├── format.ts          # Utilidades de formato
-│       └── api-client.ts      # Helper de fetch
-└── .env.example
+│   │   ├── ui/                # Componentes comunes
+│   │   ├── modules/           # Módulos financieros de negocio
+│   │   └── providers.tsx      # ThemeProvider + Query + AuthSession
+│   ├── lib/
+│   │   ├── auth.ts            # Configuración de NextAuth
+│   │   ├── db.ts              # Cliente Prisma
+│   │   └── api-client.ts      # Fetcher HTTP genérico
+│   └── middleware.ts          # Seguridad perimetral global
 ```
-
-## 📈 Métricas del Proyecto
-
-- **27** endpoints de API
-- **9** módulos de frontend
-- **9** modelos de base de datos
-- **48** componentes UI (shadcn/ui)
-- **50** productos precargados
-- **5** empleados precargados
-- **268** ventas demo de 14 días
-- **0** errores de lint
-
-## 🎨 Decisiones de Diseño
-
-- **Paleta amber/orange**: evoca el ambiente de bar/cantina, evita colores corporativos fríos
-- **Mobile-first**: el sidebar colapsa en móvil, tablas con scroll horizontal, botones touch-friendly (44px)
-- **Snapshots de precios**: cada venta guarda `unitPrice` y `purchasePrice` al momento de la transacción, preservando el historial aunque cambien los precios del catálogo
-- **API REST en vez de Server Actions**: mayor predecibilidad, testeabilidad y compatibilidad
-- **TanStack Query**: manejo automático de cache, loading states y refetch
-- **ticketId para agrupar cuentas**: permite cobrar múltiples productos como una sola cuenta
 
 ## 📝 Licencia
 
 MIT - Libre uso para fines educativos y comerciales.
-
----
-
-**Construido como proyecto de portafolio** demostrando desarrollo full-stack con asistencia de IA: análisis de requisitos desde un Excel real, diseño de schema, implementación de API REST, y UI/UX profesional.
