@@ -83,3 +83,22 @@ export const CATEGORY_COLORS: Record<string, string> = {
 
 export const PAYMENT_METHODS = ["EFECTIVO", "ELECTRONICO"] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+export function getLocalDateStringInTimeZone(timeZone: string = "America/Mexico_City"): string {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+  const parts = formatter.formatToParts(new Date())
+  const month = parts.find((p) => p.type === "month")?.value ?? "01"
+  const day = parts.find((p) => p.type === "day")?.value ?? "01"
+  const year = parts.find((p) => p.type === "year")?.value ?? "2026"
+  return `${year}-${month}-${day}`
+}
+
+export function getLocalDateInTimeZone(timeZone: string = "America/Mexico_City"): Date {
+  const ymd = getLocalDateStringInTimeZone(timeZone)
+  return new Date(`${ymd}T12:00:00`)
+}

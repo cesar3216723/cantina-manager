@@ -34,6 +34,7 @@ import {
   formatCurrency,
   formatNumber,
   formatDate,
+  todayDateInput,
   CATEGORY_COLORS,
 } from "@/lib/format";
 
@@ -118,9 +119,10 @@ function dayMonthLabel(isoDate: string): string {
 
 // ---------------- Component ----------------
 export function DashboardModule({ onNavigate }: DashboardModuleProps) {
+  const todayStr = todayDateInput();
   const { data, isLoading, isError } = useQuery<DashboardData>({
-    queryKey: ["dashboard"],
-    queryFn: () => apiFetch<DashboardData>("/api/dashboard"),
+    queryKey: ["dashboard", todayStr],
+    queryFn: () => apiFetch<DashboardData>(`/api/dashboard?date=${todayStr}`),
   });
 
   const d = data;

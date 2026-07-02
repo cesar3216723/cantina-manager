@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { startOfDay, endOfDay } from "@/lib/format";
+import { startOfDay, endOfDay, getLocalDateInTimeZone } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
     let target: Date;
     if (dateParam) {
       target = new Date(dateParam + "T00:00:00");
-      if (isNaN(target.getTime())) target = new Date();
+      if (isNaN(target.getTime())) target = getLocalDateInTimeZone();
     } else {
-      target = new Date();
+      target = getLocalDateInTimeZone();
     }
 
     const where: {

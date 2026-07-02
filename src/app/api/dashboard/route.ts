@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { startOfDay, endOfDay, formatDateInput } from "@/lib/format";
+import { startOfDay, endOfDay, formatDateInput, getLocalDateInTimeZone } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get("date");
     const today = dateParam
-      ? parseDateNoon(dateParam) ?? new Date()
-      : new Date();
+      ? parseDateNoon(dateParam) ?? getLocalDateInTimeZone()
+      : getLocalDateInTimeZone();
 
     const dayStart = startOfDay(today);
     const dayEnd = endOfDay(today);
