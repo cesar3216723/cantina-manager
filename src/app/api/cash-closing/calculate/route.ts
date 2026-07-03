@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
     // Run all aggregations in parallel for speed
     const [
       salesAgg,
+      salesRows,
       expenses,
       staffPaymentsAgg,
       staffPayments,
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest) {
       db.sale.aggregate({
         where: { date: { gte: dayStart, lte: dayEnd } },
         _sum: { total: true },
+      }),
+      // Sales details to calculate payment method splits
+      db.sale.findMany({
+        where: { date: { gte: dayStart, lte: dayEnd } },
       }),
       // Expenses for the day
       db.expense.findMany({
@@ -81,6 +86,14 @@ export async function POST(req: NextRequest) {
 
     const totalSales = salesAgg._sum.total ?? 0;
 
+    const cashSales = salesRows
+      .filter((s) => s.paymentMethod === "EFECTIVO")
+      .reduce((acc, s) => acc + (s.total || 0), 0);
+
+    const electronicSales = salesRows
+      .filter((s) => s.paymentMethod === "TARJETA" || s.paymentMethod === "TRANSFERENCIA")
+      .reduce((acc, s) => acc + (s.total || 0), 0);
+
     const totalExpenses = expenses.reduce(
       (s, e) => s + (e.amount || 0),
       0
@@ -112,8 +125,8 @@ export async function POST(req: NextRequest) {
       date,
       // Sales
       totalSales,
-      electronicSales: 0, // manual entry - user decides split
-      cashSales: 0,
+      electronicSales,
+      cashSales,
       // Expenses (split by method)
       totalExpenses,
       cashExpenses,

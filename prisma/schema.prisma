@@ -66,6 +66,7 @@ model Sale {
   purchasePrice  Float    @default(0) // snapshot del costo
   total          Float    @default(0) // quantity * unitPrice
   isComplimentary Boolean @default(false) // cortesia
+  paymentMethod  String   @default("EFECTIVO") // EFECTIVO, TARJETA, TRANSFERENCIA
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

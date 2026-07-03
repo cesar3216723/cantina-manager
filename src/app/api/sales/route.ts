@@ -87,6 +87,7 @@ type SaleInput = {
   purchasePrice?: number;
   isComplimentary?: boolean;
   ticketId?: string;
+  paymentMethod?: string;
 };
 
 async function buildSaleData(item: SaleInput, ticketId: string) {
@@ -138,6 +139,7 @@ async function buildSaleData(item: SaleInput, ticketId: string) {
 
   const isComplimentary = Boolean(item.isComplimentary);
   const total = isComplimentary ? 0 : quantity * unitPrice;
+  const paymentMethod = typeof item.paymentMethod === "string" ? item.paymentMethod : "EFECTIVO";
 
   return {
     date,
@@ -150,6 +152,7 @@ async function buildSaleData(item: SaleInput, ticketId: string) {
     purchasePrice,
     total,
     isComplimentary,
+    paymentMethod,
   };
 }
 

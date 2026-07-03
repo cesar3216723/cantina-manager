@@ -18,6 +18,8 @@ import {
   User,
   CheckCircle2,
   Clock,
+  Coins,
+  Loader2,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -39,6 +41,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -72,6 +82,19 @@ interface Staff {
   name: string;
   salary: number;
   active: boolean;
+}
+
+interface TokenSale {
+  id: string;
+  date: string;
+  staffId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  commission: number;
+  staff?: Staff;
+  product?: Product;
 }
 
 interface Sale {
@@ -125,7 +148,7 @@ interface CartLine {
 
 // ---------- Main Module ----------
 export function SalesModule() {
-  const [activeTab, setActiveTab] = useState<"PUBLICO" | "PERSONAL">("PUBLICO");
+  const [activeTab, setActiveTab] = useState<"PUBLICO" | "PERSONAL" | "FICHAS">("PUBLICO");
   const [selectedDate, setSelectedDate] = useState(todayDateInput());
 
   return (
@@ -156,11 +179,12 @@ export function SalesModule() {
 
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as "PUBLICO" | "PERSONAL")}
+        onValueChange={(v) => setActiveTab(v as "PUBLICO" | "PERSONAL" | "FICHAS")}
       >
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="PUBLICO">Venta al Publico</TabsTrigger>
           <TabsTrigger value="PERSONAL">Venta a Personal</TabsTrigger>
+          <TabsTrigger value="FICHAS">Fichas (Personal)</TabsTrigger>
         </TabsList>
 
         <TabsContent value="PUBLICO" className="mt-4">
@@ -175,6 +199,13 @@ export function SalesModule() {
           <SalesPOS
             key={`personal-${selectedDate}`}
             saleType="PERSONAL"
+            selectedDate={selectedDate}
+          />
+        </TabsContent>
+
+        <TabsContent value="FICHAS" className="mt-4">
+          <TokensPOS
+            key={`fichas-${selectedDate}`}
             selectedDate={selectedDate}
           />
         </TabsContent>
@@ -224,6 +255,8 @@ function SalesPOS({
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
   const [deleteTicketTarget, setDeleteTicketTarget] = useState<Ticket | null>(null);
+  const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"EFECTIVO" | "TARJETA" | "TRANSFERENCIA">("EFECTIVO");
 
   // Filtrar productos por busqueda
   const filteredProducts = useMemo(() => {
@@ -249,25 +282,27 @@ function SalesPOS({
 
   // Totales del carrito
   const cartTotals = useMemo(() => {
-    const total = cart.reduce(
-      (sum, l) => sum + (l.isComplimentary ? 0 : l.quantity * l.unitPrice),
-      0
+    return cart.reduce(
+      (acc, item) => {
+        if (!item.isComplimentary) {
+          acc.total += item.quantity * item.unitPrice;
+          acc.itemCount += item.quantity;
+        } else {
+          acc.complimentaryCount += item.quantity;
+        }
+        return acc;
+      },
+      { total: 0, itemCount: 0, complimentaryCount: 0 }
     );
-    const units = cart.reduce((sum, l) => sum + l.quantity, 0);
-    const complimentary = cart.filter((l) => l.isComplimentary).length;
-    return { total, units, complimentary };
   }, [cart]);
 
-  // Agregar producto al carrito
+  // Agregar al carrito
   const addToCart = (product: Product) => {
     setCart((prev) => {
-      const existing = prev.find((l) => l.product.id === product.id && !l.isComplimentary);
+      const existing = prev.find((l) => l.product.id === product.id);
       if (existing) {
-        // Si ya existe (no cortesia), sumar 1
         return prev.map((l) =>
-          l.product.id === product.id && !l.isComplimentary
-            ? { ...l, quantity: l.quantity + 1 }
-            : l
+          l.product.id === product.id ? { ...l, quantity: l.quantity + 1 } : l
         );
       }
       return [
@@ -341,7 +376,7 @@ function SalesPOS({
 
   // Mutacion: cobrar cuenta (registrar todas las lineas)
   const checkoutMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (paymentMethod: string) => {
       const payload = cart.map((l) => ({
         date: selectedDate,
         productId: l.product.id,
@@ -350,6 +385,7 @@ function SalesPOS({
         quantity: l.quantity,
         unitPrice: l.isComplimentary ? 0 : l.unitPrice,
         isComplimentary: l.isComplimentary,
+        paymentMethod,
       }));
       return apiFetch("/api/sales", {
         method: "POST",
@@ -366,6 +402,7 @@ function SalesPOS({
       toast.success(`Cuenta cobrada: ${items} producto(s) · ${formatCurrency(total)}`);
       clearCart();
       if (saleType === "PERSONAL") setSelectedStaffId("");
+      setCheckoutDialogOpen(false);
     },
     onError: (err) => {
       const msg =
@@ -398,11 +435,12 @@ function SalesPOS({
       toast.error("Selecciona el empleado");
       return;
     }
-    checkoutMutation.mutate();
+    setSelectedPaymentMethod("EFECTIVO");
+    setCheckoutDialogOpen(true);
   };
 
   const tickets = ticketsData?.tickets || [];
-  const summary = ticketsData?.summary;
+  const summary = ticketsData?.summary;;
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
@@ -881,6 +919,93 @@ function SalesPOS({
         </Card>
       </div>
 
+      {/* Dialog de cobro con seleccion de metodo de pago */}
+      <Dialog
+        open={checkoutDialogOpen}
+        onOpenChange={setCheckoutDialogOpen}
+      >
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Cobrar Cuenta</DialogTitle>
+            <DialogDescription>
+              Selecciona el metodo de pago para completar la transaccion.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            <div className="rounded-xl bg-muted/50 p-4 text-center">
+              <span className="text-xs uppercase tracking-wider text-muted-foreground block mb-1">
+                Total a Cobrar
+              </span>
+              <span className="text-3xl font-extrabold text-primary tabular-nums">
+                {formatCurrency(cartTotals.total)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentMethod("EFECTIVO")}
+                className={[
+                  "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                  selectedPaymentMethod === "EFECTIVO"
+                    ? "border-amber-500 bg-amber-50/50 text-amber-700 dark:border-amber-500 dark:bg-amber-950/20 dark:text-amber-300"
+                    : "border-border hover:bg-muted/50"
+                ].join(" ")}
+              >
+                <span className="text-2xl">💵</span>
+                <span>Efectivo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentMethod("TARJETA")}
+                className={[
+                  "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                  selectedPaymentMethod === "TARJETA"
+                    ? "border-amber-500 bg-amber-50/50 text-amber-700 dark:border-amber-500 dark:bg-amber-950/20 dark:text-amber-300"
+                    : "border-border hover:bg-muted/50"
+                ].join(" ")}
+              >
+                <span className="text-2xl">💳</span>
+                <span>Tarjeta</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentMethod("TRANSFERENCIA")}
+                className={[
+                  "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 text-sm font-medium transition-all",
+                  selectedPaymentMethod === "TRANSFERENCIA"
+                    ? "border-amber-500 bg-amber-50/50 text-amber-700 dark:border-amber-500 dark:bg-amber-950/20 dark:text-amber-300"
+                    : "border-border hover:bg-muted/50"
+                ].join(" ")}
+              >
+                <span className="text-2xl">📲</span>
+                <span>Transf.</span>
+              </button>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setCheckoutDialogOpen(false)}
+              disabled={checkoutMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => checkoutMutation.mutate(selectedPaymentMethod)}
+              disabled={checkoutMutation.isPending}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-medium"
+            >
+              {checkoutMutation.isPending ? "Procesando..." : "Confirmar Pago"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog de confirmacion de borrado de cuenta */}
       <AlertDialog
         open={!!deleteTicketTarget}
@@ -914,6 +1039,290 @@ function SalesPOS({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// Componente de Fichas (TokensPOS) para el dia
+function TokensPOS({ selectedDate }: { selectedDate: string }) {
+  const queryClient = useQueryClient();
+  const [staffId, setStaffId] = useState("");
+  const [productId, setProductId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [unitPrice, setUnitPrice] = useState("60");
+
+  // Personal activo
+  const { data: staffList = [] } = useQuery<Staff[]>({
+    queryKey: ["staff", "active"],
+    queryFn: () => apiFetch<Staff[]>("/api/staff?active=true"),
+  });
+
+  // Productos activos
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["products", "active"],
+    queryFn: () => apiFetch<Product[]>("/api/products?active=true"),
+  });
+
+  // Fichas del dia
+  const { data: tokens = [], isLoading: loadingTokens } = useQuery<TokenSale[]>({
+    queryKey: ["tokens", selectedDate],
+    queryFn: () =>
+      apiFetch<TokenSale[]>(`/api/staff/tokens?date=${encodeURIComponent(selectedDate)}`),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: {
+      date: string;
+      staffId: string;
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+    }) =>
+      apiFetch<TokenSale>("/api/staff/tokens", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tokens", selectedDate] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Ficha registrada con éxito");
+      setQuantity("1");
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ success: boolean }>(`/api/staff/tokens/${id}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tokens", selectedDate] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Ficha eliminada");
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  });
+
+  const qty = parseInt(quantity) || 0;
+  const price = parseFloat(unitPrice) || 0;
+  const totalCalc = qty * price;
+  const commissionCalc = Math.round((qty * price) / 6 * 100) / 100;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffId) {
+      toast.error("Selecciona el miembro del personal");
+      return;
+    }
+    if (!productId) {
+      toast.error("Selecciona el tipo de ficha");
+      return;
+    }
+    if (qty <= 0) {
+      toast.error("La cantidad debe ser mayor a 0");
+      return;
+    }
+    createMutation.mutate({
+      date: selectedDate,
+      staffId,
+      productId,
+      quantity: qty,
+      unitPrice: price,
+    });
+  };
+
+  // Totales de la tabla
+  const totals = useMemo(() => {
+    return tokens.reduce(
+      (acc, t) => {
+        acc.total += t.total;
+        acc.commission += t.commission;
+        acc.quantity += t.quantity;
+        return acc;
+      },
+      { total: 0, commission: 0, quantity: 0 }
+    );
+  }, [tokens]);
+
+  return (
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
+      {/* Formulario de registro (2/5) */}
+      <div className="lg:col-span-2">
+        <Card className="h-full">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Coins className="h-5 w-5 text-amber-600" />
+              Registrar Fichas
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="token-staff">Personal</Label>
+                <Select value={staffId} onValueChange={setStaffId}>
+                  <SelectTrigger id="token-staff" className="h-10 w-full">
+                    <SelectValue placeholder="Seleccionar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {staffList.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="token-product">Tipo de Ficha / Servicio</Label>
+                <Select value={productId} onValueChange={setProductId}>
+                  <SelectTrigger id="token-product" className="h-10 w-full">
+                    <SelectValue placeholder="Seleccionar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} ({formatCurrency(p.salePrice)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="token-qty">Cantidad</Label>
+                  <Input
+                    id="token-qty"
+                    type="number"
+                    min={1}
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="token-price">Precio Unitario</Label>
+                  <Input
+                    id="token-price"
+                    type="number"
+                    min={0}
+                    value={unitPrice}
+                    onChange={(e) => setUnitPrice(e.target.value)}
+                    className="h-10"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-muted/40 p-3 space-y-1.5 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Total Cobrado:</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(totalCalc)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Comisión Personal (1/6):</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(commissionCalc)}</span>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={createMutation.isPending}
+                className="w-full h-10 bg-amber-600 hover:bg-amber-700 text-white font-medium"
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="mr-2 h-4 w-4" />
+                )}
+                Registrar Fichas
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Historial y Totales (3/5) */}
+      <div className="lg:col-span-3">
+        <Card className="flex h-full flex-col">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Resumen de Fichas</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 p-0">
+            {loadingTokens ? (
+              <div className="p-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                Cargando fichas...
+              </div>
+            ) : tokens.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                No hay fichas registradas para esta fecha.
+              </div>
+            ) : (
+              <ScrollArea className="h-[calc(100vh-25rem)] min-h-[350px]">
+                <div className="p-4 space-y-3">
+                  {tokens.map((t) => (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-amber-700 dark:text-amber-400">
+                            {t.staff?.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {t.product?.name}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {t.quantity} ficha(s) · unitario: {formatCurrency(t.unitPrice)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="font-semibold text-sm">{formatCurrency(t.total)}</div>
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                            comisión: {formatCurrency(t.commission)}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMutation.mutate(t.id)}
+                          className="h-8 w-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </CardContent>
+
+          {/* Totales acumulados */}
+          {totals.quantity > 0 && (
+            <div className="border-t bg-amber-50 p-4 dark:bg-amber-900/20">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm">TOTAL COBRADO</span>
+                <span className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                  {formatCurrency(totals.total)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-1 text-xs">
+                <span className="text-muted-foreground">{totals.quantity} fichas registradas</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  Comisión total: {formatCurrency(totals.commission)}
+                </span>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
