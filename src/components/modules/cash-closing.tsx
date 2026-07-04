@@ -173,11 +173,17 @@ function num(v: string | number | null | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-function formFromClosing(c: CashClosing | null | undefined): FormState {
-  if (!c) return { ...EMPTY_FORM };
+function formFromClosing(c: CashClosing | null | undefined, calc?: CalcResult | null): FormState {
+  if (!c) {
+    return {
+      ...EMPTY_FORM,
+      cashSales: String(calc?.cashSales ?? 0),
+      electronicSales: String(calc?.electronicSales ?? 0),
+    };
+  }
   return {
-    cashSales: String(c.cashSales ?? 0),
-    electronicSales: String(c.electronicSales ?? 0),
+    cashSales: String(c.cashSales ?? calc?.cashSales ?? 0),
+    electronicSales: String(c.electronicSales ?? calc?.electronicSales ?? 0),
     initialCash: String(c.initialCash ?? 0),
     initialElectronic: String(c.initialElectronic ?? 0),
     finalCash: String(c.finalCash ?? 0),
@@ -262,7 +268,11 @@ function CashClosingInner({
             "-" +
             (existing?.id ?? "new") +
             "-" +
-            (existing?.updatedAt ?? "")
+            (existing?.updatedAt ?? "") +
+            "-" +
+            (calc?.cashSales ?? 0) +
+            "-" +
+            (calc?.electronicSales ?? 0)
           }
           date={date}
           existing={existing ?? null}
@@ -392,7 +402,7 @@ function CashClosingForm({
   const queryClient = useQueryClient();
 
   // Initialize from existing (or defaults). useState initializer runs once on mount.
-  const [form, setForm] = useState<FormState>(() => formFromClosing(existing));
+  const [form, setForm] = useState<FormState>(() => formFromClosing(existing, calc));
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));

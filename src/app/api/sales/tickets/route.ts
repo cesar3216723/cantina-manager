@@ -41,7 +41,6 @@ export async function GET(req: NextRequest) {
       orderBy: [{ createdAt: "desc" }],
     });
 
-    // Agrupar por ticketId
     const ticketsMap = new Map<
       string,
       {
@@ -55,6 +54,7 @@ export async function GET(req: NextRequest) {
         staffId?: string | null;
         staffName?: string | null;
         complimentaryCount: number;
+        paymentMethod?: string;
       }
     >();
 
@@ -72,6 +72,7 @@ export async function GET(req: NextRequest) {
           staffId: sale.staffId,
           staffName: sale.staff?.name || null,
           complimentaryCount: 0,
+          paymentMethod: sale.paymentMethod,
         });
       }
       const t = ticketsMap.get(key)!;

@@ -125,6 +125,7 @@ interface Ticket {
   staffId?: string | null;
   staffName?: string | null;
   complimentaryCount: number;
+  paymentMethod?: string;
 }
 
 interface TicketsResponse {
@@ -805,6 +806,21 @@ function SalesPOS({
                                 <Badge variant="outline" className="h-4 px-1 text-[10px]">
                                   {ticket.itemCount} item{ticket.itemCount !== 1 ? "s" : ""}
                                 </Badge>
+                                {ticket.paymentMethod && (
+                                  <Badge
+                                    variant="outline"
+                                    className={[
+                                      "h-4 px-1.5 text-[9px] uppercase font-bold",
+                                      ticket.paymentMethod === "EFECTIVO"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400"
+                                        : ticket.paymentMethod === "TARJETA"
+                                          ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400"
+                                          : "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/50 dark:bg-purple-950/20 dark:text-purple-400"
+                                    ].join(" ")}
+                                  >
+                                    {ticket.paymentMethod === "EFECTIVO" ? "💵 EFECTIVO" : ticket.paymentMethod === "TARJETA" ? "💳 TARJETA" : "📲 TRANS."}
+                                  </Badge>
+                                )}
                                 {ticket.complimentaryCount > 0 && (
                                   <Badge className="h-4 px-1 text-[10px] bg-purple-500">
                                     <Gift className="mr-0.5 h-2.5 w-2.5" />
