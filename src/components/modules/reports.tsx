@@ -14,6 +14,8 @@ import {
   Percent,
   Loader2,
   Receipt,
+  Eye,
+  Info,
 } from "lucide-react";
 import {
   BarChart,
@@ -37,6 +39,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -58,6 +67,31 @@ import {
 import { toast } from "sonner";
 
 // ---------- Types ----------
+interface TicketItem {
+  id: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  isComplimentary: boolean;
+  product: {
+    name: string;
+  };
+}
+
+interface SalesTicket {
+  ticketId: string;
+  items: TicketItem[];
+  total: number;
+  itemCount: number;
+  unitCount: number;
+  createdAt: string;
+  saleType: string;
+  staffId?: string | null;
+  staffName?: string | null;
+  complimentaryCount: number;
+  paymentMethod?: string;
+}
+
 interface SummaryData {
   totalSales: number;
   totalCost: number;
@@ -269,19 +303,33 @@ function exportCsv(filename: string, rows: string[][]) {
 }
 
 // ---------- Main Module ----------
-export function ReportsModule() {
+export function ReportsModule({
+  onNavigateToSalesWithDate,
+}: {
+  onNavigateToSalesWithDate?: (date: string) => void;
+}) {
   const initial = useMemo(() => last30Days(), []);
   const [draftFrom, setDraftFrom] = useState(initial.from);
   const [draftTo, setDraftTo] = useState(initial.to);
   const [committedFrom, setCommittedFrom] = useState(initial.from);
   const [committedTo, setCommittedTo] = useState(initial.to);
   const [activeTab, setActiveTab] = useState("sales");
+  const [selectedTicketDetail, setSelectedTicketDetail] = useState<SalesTicket | null>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["reports", committedFrom, committedTo],
     queryFn: () => fetchAllReports(committedFrom, committedTo),
     staleTime: 30 * 1000,
   });
+
+  const { data: ticketsData, isLoading: loadingTickets } = useQuery<{ tickets: SalesTicket[] }>({
+    queryKey: ["reports-tickets", committedFrom, committedTo],
+    queryFn: () =>
+      apiFetch<{ tickets: SalesTicket[] }>(
+        `/api/sales/tickets?from=${encodeURIComponent(committedFrom)}&to=${encodeURIComponent(committedTo)}`
+      ),
+  });
+  const tickets = ticketsData?.tickets || [];
 
   const handleGenerate = () => {
     setCommittedFrom(draftFrom);
@@ -296,6 +344,24 @@ export function ReportsModule() {
   };
 
   const handleExport = () => {
+    if (activeTab === "tickets") {
+      const rows: string[][] = [["Fecha/Hora", "Folio Cuenta", "Tipo Venta", "Personal", "Metodo Pago", "Productos", "Total"]];
+      tickets.forEach((t) => {
+        const prodSummary = t.items.map((i) => `${i.product.name} (x${i.quantity})`).join(" | ");
+        rows.push([
+          new Date(t.createdAt).toLocaleString("es-MX"),
+          t.ticketId,
+          t.saleType,
+          t.staffName || "",
+          t.paymentMethod || "EFECTIVO",
+          prodSummary,
+          String(t.total)
+        ]);
+      });
+      exportCsv(`cuentas-${committedFrom}-${committedTo}.csv`, rows);
+      return;
+    }
+
     if (!data) return;
     if (activeTab === "sales") {
       const rows: string[][] = [["Fecha", "Publico", "Personal", "Total"]];
@@ -366,7 +432,7 @@ export function ReportsModule() {
               <Button variant="outline" size="sm" onClick={() => handleQuickRange(thisWeek())}>Esta semana</Button>
               <Button variant="outline" size="sm" onClick={() => handleQuickRange(thisMonth())}>Este mes</Button>
               <Button variant="outline" size="sm" onClick={() => handleQuickRange(last30Days())}>Ultimos 30 dias</Button>
-              <Button variant="outline" size="sm" onClick={handleExport} disabled={!data}>
+              <Button variant="outline" size="sm" onClick={handleExport} disabled={activeTab === "tickets" ? tickets.length === 0 : !data}>
                 <Download className="mr-1 h-3.5 w-3.5" /> Excel
               </Button>
             </div>
@@ -420,6 +486,7 @@ export function ReportsModule() {
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="flex w-full flex-wrap gap-1 h-auto">
               <TabsTrigger value="sales" className="flex-1 min-w-0">Ventas por Dia</TabsTrigger>
+              <TabsTrigger value="tickets" className="flex-1 min-w-0">Historial Cuentas</TabsTrigger>
               <TabsTrigger value="products" className="flex-1 min-w-0">Top Productos</TabsTrigger>
               <TabsTrigger value="categories" className="flex-1 min-w-0">Por Categoria</TabsTrigger>
               <TabsTrigger value="profit" className="flex-1 min-w-0">Utilidad</TabsTrigger>
@@ -471,7 +538,17 @@ export function ReportsModule() {
                           return (
                             <TableRow key={d.date} className={isBest ? "bg-emerald-50 dark:bg-emerald-900/20" : isWorst ? "bg-rose-50 dark:bg-rose-900/20" : ""}>
                               <TableCell className="font-medium">
-                                {formatDateShort(d.date)}
+                                {onNavigateToSalesWithDate ? (
+                                  <button
+                                    onClick={() => onNavigateToSalesWithDate(d.date)}
+                                    className="text-amber-600 hover:text-amber-700 hover:underline font-bold transition-all text-left"
+                                    title="Ir a las ventas de este dia"
+                                  >
+                                    {formatDateShort(d.date)} 🔗
+                                  </button>
+                                ) : (
+                                  formatDateShort(d.date)
+                                )}
                                 {isBest && <Badge className="ml-2 bg-emerald-500">Mejor</Badge>}
                                 {isWorst && <Badge className="ml-2 bg-rose-500">Peor</Badge>}
                               </TableCell>
@@ -485,6 +562,101 @@ export function ReportsModule() {
                       </TableBody>
                     </Table>
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Tab: Tickets history */}
+            <TabsContent value="tickets" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Receipt className="h-5 w-5 text-amber-600" />
+                    Historial de Cuentas Cobradas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingTickets ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                      Cargando historial de cuentas...
+                    </div>
+                  ) : tickets.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground">
+                      No hay cuentas cobradas registradas para este periodo.
+                    </div>
+                  ) : (
+                    <div className="max-h-[500px] overflow-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-card z-10">
+                          <TableRow>
+                            <TableHead>Fecha/Hora</TableHead>
+                            <TableHead>Folio Cuenta</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead>Atendio</TableHead>
+                            <TableHead>Metodo Pago</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-center w-20">Detalle</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {tickets.map((t) => (
+                            <TableRow key={t.ticketId}>
+                              <TableCell className="text-xs">
+                                {new Date(t.createdAt).toLocaleString("es-MX", {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                #{t.ticketId.slice(-6).toUpperCase()}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="text-[10px]">
+                                  {t.saleType === "PUBLICO" ? "PUBLICO" : "PERSONAL"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                                {t.staffName || "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="outline"
+                                  className={[
+                                    "text-[9px] font-bold uppercase",
+                                    t.paymentMethod === "EFECTIVO"
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400"
+                                      : t.paymentMethod === "TARJETA"
+                                        ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400"
+                                        : "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/50 dark:bg-purple-950/20 dark:text-purple-400"
+                                  ].join(" ")}
+                                >
+                                  {t.paymentMethod === "EFECTIVO" ? "💵 EFECTIVO" : t.paymentMethod === "TARJETA" ? "💳 TARJETA" : "📲 TRANS."}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-bold text-amber-700 dark:text-amber-400">
+                                {formatCurrency(t.total)}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setSelectedTicketDetail(t)}
+                                  className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                                  title="Ver detalle de productos"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -717,6 +889,101 @@ export function ReportsModule() {
           </Tabs>
         </>
       ) : null}
+
+      {/* Modal: Detalle de Cuenta */}
+      <Dialog
+        open={!!selectedTicketDetail}
+        onOpenChange={(open) => !open && setSelectedTicketDetail(null)}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-amber-600" />
+              Detalle de Cuenta
+            </DialogTitle>
+            <DialogDescription>
+              Consulta los productos vendidos en esta comanda.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedTicketDetail && (
+            <div className="space-y-4 py-2">
+              {/* Encabezado del ticket */}
+              <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/30 p-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground block">Folio Cuenta:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    #{selectedTicketDetail.ticketId.slice(-6).toUpperCase()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Fecha/Hora:</span>
+                  <span className="font-semibold text-foreground">
+                    {new Date(selectedTicketDetail.createdAt).toLocaleString("es-MX")}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Tipo Venta:</span>
+                  <span className="font-semibold text-foreground">
+                    {selectedTicketDetail.saleType === "PUBLICO" ? "Venta al Publico" : `Personal: ${selectedTicketDetail.staffName || ""}`}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Metodo de Pago:</span>
+                  <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                    {selectedTicketDetail.paymentMethod || "EFECTIVO"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Lista de productos */}
+              <div className="rounded-lg border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                      <TableHead className="py-2">Producto</TableHead>
+                      <TableHead className="text-center py-2">Cant.</TableHead>
+                      <TableHead className="text-right py-2">Unit.</TableHead>
+                      <TableHead className="text-right py-2">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedTicketDetail.items.map((item) => (
+                      <TableRow key={item.id} className="hover:bg-transparent">
+                        <TableCell className="py-2 text-xs font-medium">
+                          {item.product?.name || "Producto sin nombre"}
+                          {item.isComplimentary && (
+                            <Badge className="ml-1 h-3.5 px-1 text-[9px] bg-purple-500 text-white border-none">
+                              Cortesia
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center py-2 text-xs">
+                          {item.quantity}
+                        </TableCell>
+                        <TableCell className="text-right py-2 text-xs">
+                          {item.isComplimentary ? "-" : formatCurrency(item.unitPrice)}
+                        </TableCell>
+                        <TableCell className="text-right py-2 text-xs font-semibold">
+                          {item.isComplimentary ? "$0.00" : formatCurrency(item.total)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Total final */}
+              <div className="flex justify-between items-center rounded-lg bg-amber-50 dark:bg-amber-950/20 p-3.5 border border-amber-100 dark:border-amber-900/50">
+                <span className="font-bold text-sm text-amber-800 dark:text-amber-300">TOTAL COBRADO</span>
+                <span className="text-xl font-extrabold text-amber-700 dark:text-amber-400">
+                  {formatCurrency(selectedTicketDetail.total)}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

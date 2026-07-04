@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   User,
   CheckCircle2,
   Clock,
@@ -148,9 +149,34 @@ interface CartLine {
 }
 
 // ---------- Main Module ----------
-export function SalesModule() {
+export function SalesModule({
+  initialDate,
+  onDateHandled,
+}: {
+  initialDate?: string;
+  onDateHandled?: () => void;
+}) {
   const [activeTab, setActiveTab] = useState<"PUBLICO" | "PERSONAL" | "FICHAS">("PUBLICO");
   const [selectedDate, setSelectedDate] = useState(todayDateInput());
+
+  useEffect(() => {
+    if (initialDate) {
+      setSelectedDate(initialDate);
+      if (onDateHandled) onDateHandled();
+    }
+  }, [initialDate, onDateHandled]);
+
+  const handlePrevDay = () => {
+    const d = new Date(selectedDate + "T12:00:00");
+    d.setDate(d.getDate() - 1);
+    setSelectedDate(formatDateInput(d));
+  };
+
+  const handleNextDay = () => {
+    const d = new Date(selectedDate + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    setSelectedDate(formatDateInput(d));
+  };
 
   return (
     <div className="space-y-5">
@@ -162,14 +188,36 @@ export function SalesModule() {
               Fecha
             </Label>
             <div className="mt-1 flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Input
-                id="sale-date"
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="h-10 w-auto"
-              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handlePrevDay}
+                aria-label="Dia anterior"
+                className="h-10 w-10 shrink-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="relative flex items-center">
+                <Calendar className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="sale-date"
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="h-10 w-auto pl-9"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleNextDay}
+                aria-label="Dia siguiente"
+                className="h-10 w-10 shrink-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
             <p className="mt-1 text-xs capitalize text-muted-foreground">
               {formatDate(selectedDate)}

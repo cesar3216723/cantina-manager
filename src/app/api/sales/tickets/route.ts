@@ -13,23 +13,34 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get("date");
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
     const saleType = searchParams.get("saleType");
 
-    // Resolver fecha
-    let target: Date;
-    if (dateParam) {
-      target = new Date(dateParam + "T00:00:00");
-      if (isNaN(target.getTime())) target = getLocalDateInTimeZone();
-    } else {
-      target = getLocalDateInTimeZone();
-    }
+    let target = getLocalDateInTimeZone();
+    const where: any = {};
 
-    const where: {
-      date: { gte: Date; lte: Date };
-      saleType?: string;
-    } = {
-      date: { gte: startOfDay(target), lte: endOfDay(target) },
-    };
+    if (fromParam || toParam) {
+      const filter: { gte?: Date; lte?: Date } = {};
+      if (fromParam) {
+        const fd = new Date(fromParam + "T00:00:00");
+        if (!isNaN(fd.getTime())) {
+          filter.gte = startOfDay(fd);
+          target = fd;
+        }
+      }
+      if (toParam) {
+        const td = new Date(toParam + "T00:00:00");
+        if (!isNaN(td.getTime())) filter.lte = endOfDay(td);
+      }
+      if (Object.keys(filter).length > 0) where.date = filter;
+    } else {
+      if (dateParam) {
+        const d = new Date(dateParam + "T00:00:00");
+        if (!isNaN(d.getTime())) target = d;
+      }
+      where.date = { gte: startOfDay(target), lte: endOfDay(target) };
+    }
 
     if (saleType && (saleType === "PUBLICO" || saleType === "PERSONAL")) {
       where.saleType = saleType;

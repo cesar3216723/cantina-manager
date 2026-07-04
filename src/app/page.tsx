@@ -15,7 +15,13 @@ import { ReportsModule } from "@/components/modules/reports"
 export default function HomePage() {
   const [activeView, setActiveView] = useState<ViewKey>("dashboard")
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [salesActiveDate, setSalesActiveDate] = useState<string | null>(null)
   const title = useNavTitle(activeView)
+
+  const handleNavigateToSalesWithDate = (date: string) => {
+    setSalesActiveDate(date)
+    setActiveView("sales")
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -45,14 +51,21 @@ export default function HomePage() {
 
           <div className="p-4 sm:p-6 lg:p-8">
             {activeView === "dashboard" && <DashboardModule onNavigate={setActiveView} />}
-            {activeView === "sales" && <SalesModule />}
+            {activeView === "sales" && (
+              <SalesModule
+                initialDate={salesActiveDate || undefined}
+                onDateHandled={() => setSalesActiveDate(null)}
+              />
+            )}
             {activeView === "inventory" && <InventoryModule />}
             {activeView === "products" && <ProductsModule />}
             {activeView === "staff" && <StaffModule />}
             {activeView === "expenses" && <ExpensesModule />}
             {activeView === "credits" && <CreditsModule />}
             {activeView === "cash-closing" && <CashClosingModule />}
-            {activeView === "reports" && <ReportsModule />}
+            {activeView === "reports" && (
+              <ReportsModule onNavigateToSalesWithDate={handleNavigateToSalesWithDate} />
+            )}
           </div>
 
           <footer className="border-t bg-card px-4 py-4 text-center text-xs text-muted-foreground sm:px-6 lg:px-8">
