@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
         : quantity * unitPrice;
 
     // Comision: si el body trae un numero especifico se usa; si no, se calcula
-    // usando la regla de negocio: ficha 1 a 15 la empleada recibe $60 de comision, de la 16 en adelante recibe $40
+    // usando la regla de negocio: ficha 1 a 15 la empleada recibe $60 de comision, de la 16 en adelante recibe $80
     let commission: number;
     if (
       typeof body.commission === "number" &&
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
       let totalCommission = 0;
       for (let i = 1; i <= quantity; i++) {
         const tokenNumber = existingQuantity + i;
-        const staffCut = tokenNumber <= 15 ? 60 : 40;
+        const staffCut = tokenNumber <= 15 ? 60 : 80;
         totalCommission += Math.min(unitPrice, staffCut);
       }
       commission = totalCommission;

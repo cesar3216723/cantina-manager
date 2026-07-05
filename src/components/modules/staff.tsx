@@ -705,62 +705,122 @@ function TokenSalesSection({
     onError: (err: ApiError) => toast.error(err.message),
   })
 
-  const [editingToken, setEditingToken] = useState<TokenSale | null>(null)
-  const [editCommission, setEditCommission] = useState("")
-  const [editQuantity, setEditQuantity] = useState("")
-  const [editUnitPrice, setEditUnitPrice] = useState("")
+  const [editingGroup, setEditingGroup] = useState<{
+    staffId: string;
+    staffName: string;
+    quantity: number;
+    commission: number;
+    tokenIds: string[];
+  } | null>(null)
+  const [editQuantity, setEditQuantity] = useState("0")
+  const [editCommission, setEditCommission] = useState("0")
 
   useEffect(() => {
-    if (editingToken) {
-      setEditCommission(String(editingToken.commission))
-      setEditQuantity(String(editingToken.quantity))
-      setEditUnitPrice(String(editingToken.unitPrice))
+    if (editingGroup) {
+      setEditQuantity(String(editingGroup.quantity))
+      setEditCommission(String(editingGroup.commission))
     }
-  }, [editingToken])
+  }, [editingGroup])
 
-  const updateMutation = useMutation({
-    mutationFn: (data: { id: string; commission: number; quantity: number; unitPrice: number; total: number }) =>
-      apiFetch<TokenSale>(`/api/staff/tokens/${data.id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      }),
+  const updateGroupMutation = useMutation({
+    mutationFn: async (data: { tokenIds: string[]; commission: number; quantity: number }) => {
+      await Promise.all(
+        data.tokenIds.map((id, index) => {
+          const isFirst = index === 0;
+          return apiFetch<TokenSale>(`/api/staff/tokens/${id}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              commission: isFirst ? data.commission : 0,
+              quantity: isFirst ? data.quantity : 0,
+              total: isFirst ? data.quantity * 120 : 0,
+            }),
+          });
+        })
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tokens", date] })
-      toast.success("Ficha actualizada")
-      setEditingToken(null)
+      toast.success("Comisión de la empleada actualizada")
+      setEditingGroup(null)
       onChanged()
     },
     onError: (err: ApiError) => toast.error(err.message),
   })
 
-  const handleUpdateSubmit = (e: React.FormEvent) => {
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (tokenIds: string[]) => {
+      await Promise.all(
+        tokenIds.map((id) =>
+          apiFetch<{ success: boolean }>(`/api/staff/tokens/${id}`, {
+            method: "DELETE",
+          })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tokens", date] })
+      toast.success("Fichas de la empleada eliminadas")
+      onChanged()
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  })
+
+  const handleUpdateGroupSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingToken) return
-    const comm = parseFloat(editCommission)
+    if (!editingGroup) return
     const qtyVal = parseInt(editQuantity)
-    const priceVal = parseFloat(editUnitPrice)
+    const commVal = parseFloat(editCommission)
 
-    if (isNaN(comm) || comm < 0) {
-      toast.error("La comision debe ser un numero valido")
+    if (isNaN(qtyVal) || qtyVal < 0) {
+      toast.error("La cantidad de fichas debe ser valida")
       return
     }
-    if (isNaN(qtyVal) || qtyVal <= 0) {
-      toast.error("La cantidad debe ser mayor a 0")
-      return
-    }
-    if (isNaN(priceVal) || priceVal < 0) {
-      toast.error("El precio debe ser valido")
+    if (isNaN(commVal) || commVal < 0) {
+      toast.error("La comision debe ser valida")
       return
     }
 
-    updateMutation.mutate({
-      id: editingToken.id,
-      commission: comm,
+    updateGroupMutation.mutate({
+      tokenIds: editingGroup.tokenIds,
+      commission: commVal,
       quantity: qtyVal,
-      unitPrice: priceVal,
-      total: qtyVal * priceVal,
     })
   }
+
+  const groupedTokens = useMemo(() => {
+    const groups: {
+      [staffId: string]: {
+        staffName: string;
+        quantity: number;
+        total: number;
+        commission: number;
+        tokenIds: string[];
+      };
+    } = {};
+
+    tokens.forEach((t) => {
+      const sid = t.staffId;
+      const name = t.staff?.name || "Sin nombre";
+      if (!groups[sid]) {
+        groups[sid] = {
+          staffName: name,
+          quantity: 0,
+          total: 0,
+          commission: 0,
+          tokenIds: [],
+        };
+      }
+      groups[sid].quantity += t.quantity;
+      groups[sid].total += t.total;
+      groups[sid].commission += t.commission;
+      groups[sid].tokenIds.push(t.id);
+    });
+
+    return Object.entries(groups).map(([staffId, data]) => ({
+      staffId,
+      ...data,
+    }));
+  }, [tokens]);
 
   const qty = parseInt(quantity) || 0
   const price = parseFloat(unitPrice) || 0
@@ -883,7 +943,8 @@ function TokenSalesSection({
               step="0.01"
               value={unitPrice}
               onChange={(e) => setUnitPrice(e.target.value)}
-              className="h-10"
+              className="h-10 bg-muted cursor-not-allowed"
+              disabled
             />
           </div>
           <div className="flex items-end">
@@ -936,37 +997,30 @@ function TokenSalesSection({
                   <TableHead>Producto</TableHead>
                   <TableHead className="text-right">Cant.</TableHead>
                   <TableHead className="text-right">Precio</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Comision</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="text-right">Fichas vendidas</TableHead>
+                  <TableHead className="text-right">Comision Acumulada</TableHead>
+                  <TableHead className="text-right w-24">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tokens.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-medium">
-                      {t.staff?.name ?? "—"}
-                    </TableCell>
-                    <TableCell>{t.product?.name ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {t.quantity}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(t.unitPrice)}
+                {groupedTokens.map((g) => (
+                  <TableRow key={g.staffId}>
+                    <TableCell className="font-semibold text-amber-900 dark:text-amber-300">
+                      {g.staffName}
                     </TableCell>
                     <TableCell className="text-right tabular-nums font-medium">
-                      {formatCurrency(t.total)}
+                      {g.quantity}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {formatCurrency(t.commission)}
+                    <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-bold">
+                      {formatCurrency(g.commission)}
                     </TableCell>
                     <TableCell className="text-right flex items-center justify-end gap-1.5">
                       <Button
                         variant="ghost"
                         size="icon"
                         className="size-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
-                        onClick={() => setEditingToken(t)}
-                        aria-label="Editar ficha"
+                        onClick={() => setEditingGroup(g)}
+                        aria-label="Editar comision de empleada"
                       >
                         <Pencil className="size-4" />
                       </Button>
@@ -974,8 +1028,8 @@ function TokenSalesSection({
                         variant="ghost"
                         size="icon"
                         className="size-8 text-destructive hover:text-destructive"
-                        onClick={() => deleteMutation.mutate(t.id)}
-                        aria-label="Eliminar ficha"
+                        onClick={() => deleteGroupMutation.mutate(g.tokenIds)}
+                        aria-label="Eliminar fichas de empleada"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -985,17 +1039,13 @@ function TokenSalesSection({
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={2} className="font-semibold">
+                  <TableCell className="font-bold">
                     Totales
                   </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
+                  <TableCell className="text-right tabular-nums font-bold">
                     {totals.quantity}
                   </TableCell>
-                  <TableCell />
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {formatCurrency(totals.total)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+                  <TableCell className="text-right tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
                     {formatCurrency(totals.commission)}
                   </TableCell>
                   <TableCell />
@@ -1007,8 +1057,8 @@ function TokenSalesSection({
 
         {/* Modal: Editar Comision de Ficha */}
         <Dialog
-          open={!!editingToken}
-          onOpenChange={(open) => !open && setEditingToken(null)}
+          open={!!editingGroup}
+          onOpenChange={(open) => !open && setEditingGroup(null)}
         >
           <DialogContent className="sm:max-w-[420px]">
             <DialogHeader>
@@ -1017,38 +1067,25 @@ function TokenSalesSection({
                 Editar Comision de Ficha
               </DialogTitle>
               <DialogDescription>
-                Ajusta la comision y datos de la ficha para {editingToken?.staff?.name}.
+                Ajusta la comision y fichas acumuladas hoy para {editingGroup?.staffName}.
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleUpdateSubmit} className="space-y-4 py-2">
+            <form onSubmit={handleUpdateGroupSubmit} className="space-y-4 py-2">
               <div className="space-y-1.5">
-                <Label htmlFor="edit-qty">Cantidad</Label>
+                <Label htmlFor="edit-qty">Fichas Vendidas (Cantidad)</Label>
                 <Input
                   id="edit-qty"
                   type="number"
-                  min={1}
+                  min={0}
                   value={editQuantity}
                   onChange={(e) => setEditQuantity(e.target.value)}
-                  className="h-10"
+                  className="h-10 font-medium"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="edit-price">Precio Unitario</Label>
-                <Input
-                  id="edit-price"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={editUnitPrice}
-                  onChange={(e) => setEditUnitPrice(e.target.value)}
-                  className="h-10"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-comm">Comision de la Ficha ($)</Label>
+                <Label htmlFor="edit-comm">Comision Acumulada ($)</Label>
                 <Input
                   id="edit-comm"
                   type="number"
@@ -1056,10 +1093,10 @@ function TokenSalesSection({
                   step="0.01"
                   value={editCommission}
                   onChange={(e) => setEditCommission(e.target.value)}
-                  className="h-10 border-amber-300 focus:border-amber-500 focus:ring-amber-500 font-bold"
+                  className="h-10 border-amber-300 focus:border-amber-500 focus:ring-amber-500 font-bold text-lg text-emerald-700 dark:text-emerald-400"
                 />
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  Ingresa el monto total de comision asignado a este lote de fichas.
+                  Ingresa el monto total de comision acumulado que percibira la empleada por sus fichas hoy.
                 </p>
               </div>
 
@@ -1067,17 +1104,17 @@ function TokenSalesSection({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setEditingToken(null)}
-                  disabled={updateMutation.isPending}
+                  onClick={() => setEditingGroup(null)}
+                  disabled={updateGroupMutation.isPending}
                 >
                   Cancelar
                 </Button>
                 <Button
                   type="submit"
-                  className="bg-amber-600 hover:bg-amber-700 text-white"
-                  disabled={updateMutation.isPending}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-medium"
+                  disabled={updateGroupMutation.isPending}
                 >
-                  {updateMutation.isPending ? "Guardando..." : "Guardar Cambios"}
+                  {updateGroupMutation.isPending ? "Guardando..." : "Guardar Cambios"}
                 </Button>
               </DialogFooter>
             </form>

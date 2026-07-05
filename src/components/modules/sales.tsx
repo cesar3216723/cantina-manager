@@ -1187,7 +1187,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
     let totalComm = 0;
     for (let i = 1; i <= qty; i++) {
       const tokenNumber = existingQty + i;
-      const staffCut = tokenNumber <= 15 ? 60 : 40;
+      const staffCut = tokenNumber <= 15 ? 60 : 80;
       totalComm += Math.min(price, staffCut);
     }
     return totalComm;
@@ -1228,6 +1228,15 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
       },
       { total: 0, commission: 0, quantity: 0 }
     );
+  }, [tokens]);
+
+  const staffTokensSummary = useMemo(() => {
+    const summary: { [name: string]: number } = {};
+    tokens.forEach((t) => {
+      const name = t.staff?.name || "Sin nombre";
+      summary[name] = (summary[name] || 0) + t.quantity;
+    });
+    return Object.entries(summary);
   }, [tokens]);
 
   return (
@@ -1309,7 +1318,8 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
                     min={0}
                     value={unitPrice}
                     onChange={(e) => setUnitPrice(e.target.value)}
-                    className="h-10"
+                    className="h-10 bg-muted cursor-not-allowed"
+                    disabled
                   />
                 </div>
               </div>
@@ -1418,18 +1428,32 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
 
           {/* Totales acumulados */}
           {totals.quantity > 0 && (
-            <div className="border-t bg-amber-50 p-4 dark:bg-amber-900/20">
+            <div className="border-t bg-amber-50 p-4 dark:bg-amber-900/20 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-sm">TOTAL COBRADO</span>
                 <span className="text-xl font-bold text-amber-700 dark:text-amber-400">
                   {formatCurrency(totals.total)}
                 </span>
               </div>
-              <div className="flex items-center justify-between mt-1 text-xs">
+              <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">{totals.quantity} fichas registradas</span>
                 <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                  Comisión total: {formatCurrency(totals.commission)}
+                  Comision total: {formatCurrency(totals.commission)}
                 </span>
+              </div>
+
+              {/* Desglose por chica */}
+              <div className="border-t border-amber-200 dark:border-amber-900/50 pt-2 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                  Fichas acumuladas hoy:
+                </div>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {staffTokensSummary.map(([name, qty]) => (
+                    <Badge key={name} variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40 text-[10px] font-semibold py-0.5 px-2">
+                      {name}: <span className="font-extrabold ml-1">{qty}</span>
+                    </Badge>
+                  ))}
+                </div>
               </div>
             </div>
           )}
