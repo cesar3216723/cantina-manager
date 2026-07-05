@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       staffPayments,
       creditsPaidAgg,
       creditsPaidListRows,
+      tokenSales,
     ] = await Promise.all([
       // Total sales for the day (all types, include complimentary)
       db.sale.aggregate({
@@ -82,17 +83,32 @@ export async function POST(req: NextRequest) {
         },
         orderBy: { paidDate: "desc" },
       }),
+      // Token sales (fichas) for the day
+      db.tokenSale.findMany({
+        where: { date: { gte: dayStart, lte: dayEnd } },
+      }),
     ]);
 
-    const totalSales = salesAgg._sum.total ?? 0;
+    // Fichas values by payment method
+    const cashTokens = tokenSales
+      .filter((t) => t.paymentMethod === "EFECTIVO")
+      .reduce((acc, t) => acc + (t.total || 0), 0);
+
+    const electronicTokens = tokenSales
+      .filter((t) => t.paymentMethod === "TARJETA" || t.paymentMethod === "TRANSFERENCIA")
+      .reduce((acc, t) => acc + (t.total || 0), 0);
+
+    const tokensTotalSales = tokenSales.reduce((acc, t) => acc + (t.total || 0), 0);
+
+    const totalSales = (salesAgg._sum.total ?? 0) + tokensTotalSales;
 
     const cashSales = salesRows
       .filter((s) => s.paymentMethod === "EFECTIVO")
-      .reduce((acc, s) => acc + (s.total || 0), 0);
+      .reduce((acc, s) => acc + (s.total || 0), 0) + cashTokens;
 
     const electronicSales = salesRows
       .filter((s) => s.paymentMethod === "TARJETA" || s.paymentMethod === "TRANSFERENCIA")
-      .reduce((acc, s) => acc + (s.total || 0), 0);
+      .reduce((acc, s) => acc + (s.total || 0), 0) + electronicTokens;
 
     const totalExpenses = expenses.reduce(
       (s, e) => s + (e.amount || 0),

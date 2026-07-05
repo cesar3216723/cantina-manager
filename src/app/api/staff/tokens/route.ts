@@ -126,8 +126,8 @@ export async function POST(request: NextRequest) {
         ? body.total
         : quantity * unitPrice;
 
-    // Comision: si el body trae un numero se usa; si no, se calcula
-    // como quantity * unitPrice / 6 (1/6 del total: 10 por ficha de 60)
+    // Comision: si el body trae un numero especifico se usa; si no, se calcula
+    // usando la regla de negocio: ficha 1 a 15 el negocio se queda con $60, de la 16 en adelante se queda con $40
     let commission: number;
     if (
       typeof body.commission === "number" &&
@@ -135,8 +135,32 @@ export async function POST(request: NextRequest) {
     ) {
       commission = body.commission;
     } else {
-      commission = Math.round((quantity * unitPrice) / 6 * 100) / 100;
+      const dayStart = startOfDay(date);
+      const dayEnd = endOfDay(date);
+
+      // Sumar fichas previas de la empleada en el dia
+      const currentTokensSum = await db.tokenSale.aggregate({
+        where: {
+          staffId,
+          date: { gte: dayStart, lte: dayEnd },
+        },
+        _sum: {
+          quantity: true,
+        },
+      });
+      const existingQuantity = currentTokensSum._sum.quantity ?? 0;
+
+      let totalCommission = 0;
+      for (let i = 1; i <= quantity; i++) {
+        const tokenNumber = existingQuantity + i;
+        const businessCut = tokenNumber <= 15 ? 60 : 40;
+        const staffCut = Math.max(0, unitPrice - businessCut);
+        totalCommission += staffCut;
+      }
+      commission = totalCommission;
     }
+
+    const paymentMethod = typeof body.paymentMethod === "string" ? body.paymentMethod : "EFECTIVO";
 
     const tokenSale = await db.tokenSale.create({
       data: {
@@ -147,6 +171,7 @@ export async function POST(request: NextRequest) {
         unitPrice,
         total,
         commission,
+        paymentMethod,
       },
       include: {
         product: true,

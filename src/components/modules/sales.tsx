@@ -94,6 +94,7 @@ interface TokenSale {
   unitPrice: number;
   total: number;
   commission: number;
+  paymentMethod?: string;
   staff?: Staff;
   product?: Product;
 }
@@ -1114,6 +1115,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("60");
+  const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "TARJETA" | "TRANSFERENCIA">("EFECTIVO");
 
   // Personal activo
   const { data: staffList = [] } = useQuery<Staff[]>({
@@ -1141,6 +1143,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
       productId: string;
       quantity: number;
       unitPrice: number;
+      paymentMethod: string;
     }) =>
       apiFetch<TokenSale>("/api/staff/tokens", {
         method: "POST",
@@ -1149,6 +1152,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tokens", selectedDate] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["cash-closing"] });
       toast.success("Ficha registrada con éxito");
       setQuantity("1");
     },
@@ -1163,6 +1167,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tokens", selectedDate] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["cash-closing"] });
       toast.success("Ficha eliminada");
     },
     onError: (err: ApiError) => toast.error(err.message),
@@ -1171,7 +1176,22 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
   const qty = parseInt(quantity) || 0;
   const price = parseFloat(unitPrice) || 0;
   const totalCalc = qty * price;
-  const commissionCalc = Math.round((qty * price) / 6 * 100) / 100;
+
+  // Calculo estimado de comision en frontend segun la regla de negocio
+  const commissionCalc = useMemo(() => {
+    if (!staffId || qty <= 0) return 0;
+    const existingQty = tokens
+      .filter((t) => t.staffId === staffId)
+      .reduce((sum, t) => sum + t.quantity, 0);
+
+    let totalComm = 0;
+    for (let i = 1; i <= qty; i++) {
+      const tokenNumber = existingQty + i;
+      const businessCut = tokenNumber <= 15 ? 60 : 40;
+      totalComm += Math.max(0, price - businessCut);
+    }
+    return totalComm;
+  }, [tokens, staffId, qty, price]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1193,6 +1213,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
       productId,
       quantity: qty,
       unitPrice: price,
+      paymentMethod,
     });
   };
 
@@ -1254,6 +1275,20 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
                 </Select>
               </div>
 
+              <div className="space-y-1.5">
+                <Label htmlFor="token-payment">Metodo de Pago</Label>
+                <Select value={paymentMethod} onValueChange={(v: any) => setPaymentMethod(v)}>
+                  <SelectTrigger id="token-payment" className="h-10 w-full">
+                    <SelectValue placeholder="Metodo de pago..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EFECTIVO">💵 Efectivo</SelectItem>
+                    <SelectItem value="TARJETA">💳 Tarjeta</SelectItem>
+                    <SelectItem value="TRANSFERENCIA">📲 Transferencia</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="token-qty">Cantidad</Label>
@@ -1285,7 +1320,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
                   <span className="font-semibold text-foreground">{formatCurrency(totalCalc)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Comisión Personal (1/6):</span>
+                  <span>Comisión Personal (Automática):</span>
                   <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(commissionCalc)}</span>
                 </div>
               </div>
@@ -1332,13 +1367,26 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
                       className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border bg-card"
                     >
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-bold text-sm text-amber-700 dark:text-amber-400">
                             {t.staff?.name}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {t.product?.name}
                           </span>
+                          <Badge
+                            variant="outline"
+                            className={[
+                              "text-[8px] px-1 py-0 font-bold",
+                              t.paymentMethod === "EFECTIVO"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400"
+                                : t.paymentMethod === "TARJETA"
+                                  ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400"
+                                  : "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/50 dark:bg-purple-950/20 dark:text-purple-400"
+                            ].join(" ")}
+                          >
+                            {t.paymentMethod === "EFECTIVO" ? "💵 EFECTIVO" : t.paymentMethod === "TARJETA" ? "💳 TARJETA" : "📲 TRANS."}
+                          </Badge>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {t.quantity} ficha(s) · unitario: {formatCurrency(t.unitPrice)}

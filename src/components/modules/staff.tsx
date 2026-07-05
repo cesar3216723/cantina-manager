@@ -677,6 +677,7 @@ function TokenSalesSection({
       productId: string
       quantity: number
       unitPrice: number
+      paymentMethod: string
     }) =>
       apiFetch<TokenSale>("/api/staff/tokens", {
         method: "POST",
@@ -686,6 +687,7 @@ function TokenSalesSection({
       queryClient.invalidateQueries({ queryKey: ["tokens", date] })
       toast.success("Ficha registrada")
       setQuantity("1")
+      onChanged()
     },
     onError: (err: ApiError) => toast.error(err.message),
   })
@@ -706,7 +708,22 @@ function TokenSalesSection({
   const qty = parseInt(quantity) || 0
   const price = parseFloat(unitPrice) || 0
   const totalCalc = qty * price
-  const commissionCalc = Math.round((qty * price) / 6 * 100) / 100
+
+  // Calculo estimado de comision en frontend segun la regla de negocio
+  const commissionCalc = useMemo(() => {
+    if (!staffId || qty <= 0) return 0
+    const existingQty = tokens
+      .filter((t) => t.staffId === staffId)
+      .reduce((sum, t) => sum + t.quantity, 0)
+
+    let totalComm = 0
+    for (let i = 1; i <= qty; i++) {
+      const tokenNumber = existingQty + i
+      const businessCut = tokenNumber <= 15 ? 60 : 40
+      totalComm += Math.max(0, price - businessCut)
+    }
+    return totalComm
+  }, [tokens, staffId, qty, price])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -728,6 +745,7 @@ function TokenSalesSection({
       productId,
       quantity: qty,
       unitPrice: price,
+      paymentMethod: "EFECTIVO",
     })
   }
 
@@ -836,7 +854,7 @@ function TokenSalesSection({
             </strong>
           </span>
           <span>
-            Comision (1/6):{" "}
+            Comision (Automatica):{" "}
             <strong className="text-foreground">
               {formatCurrency(commissionCalc)}
             </strong>
