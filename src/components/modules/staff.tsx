@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
@@ -668,7 +668,7 @@ function TokenSalesSection({
   const [staffId, setStaffId] = useState("")
   const [productId, setProductId] = useState("")
   const [quantity, setQuantity] = useState("1")
-  const [unitPrice, setUnitPrice] = useState("60")
+  const [unitPrice, setUnitPrice] = useState("120")
 
   const createMutation = useMutation({
     mutationFn: (data: {
@@ -705,6 +705,63 @@ function TokenSalesSection({
     onError: (err: ApiError) => toast.error(err.message),
   })
 
+  const [editingToken, setEditingToken] = useState<TokenSale | null>(null)
+  const [editCommission, setEditCommission] = useState("")
+  const [editQuantity, setEditQuantity] = useState("")
+  const [editUnitPrice, setEditUnitPrice] = useState("")
+
+  useEffect(() => {
+    if (editingToken) {
+      setEditCommission(String(editingToken.commission))
+      setEditQuantity(String(editingToken.quantity))
+      setEditUnitPrice(String(editingToken.unitPrice))
+    }
+  }, [editingToken])
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; commission: number; quantity: number; unitPrice: number; total: number }) =>
+      apiFetch<TokenSale>(`/api/staff/tokens/${data.id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tokens", date] })
+      toast.success("Ficha actualizada")
+      setEditingToken(null)
+      onChanged()
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  })
+
+  const handleUpdateSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingToken) return
+    const comm = parseFloat(editCommission)
+    const qtyVal = parseInt(editQuantity)
+    const priceVal = parseFloat(editUnitPrice)
+
+    if (isNaN(comm) || comm < 0) {
+      toast.error("La comision debe ser un numero valido")
+      return
+    }
+    if (isNaN(qtyVal) || qtyVal <= 0) {
+      toast.error("La cantidad debe ser mayor a 0")
+      return
+    }
+    if (isNaN(priceVal) || priceVal < 0) {
+      toast.error("El precio debe ser valido")
+      return
+    }
+
+    updateMutation.mutate({
+      id: editingToken.id,
+      commission: comm,
+      quantity: qtyVal,
+      unitPrice: priceVal,
+      total: qtyVal * priceVal,
+    })
+  }
+
   const qty = parseInt(quantity) || 0
   const price = parseFloat(unitPrice) || 0
   const totalCalc = qty * price
@@ -719,8 +776,8 @@ function TokenSalesSection({
     let totalComm = 0
     for (let i = 1; i <= qty; i++) {
       const tokenNumber = existingQty + i
-      const businessCut = tokenNumber <= 15 ? 60 : 40
-      totalComm += Math.max(0, price - businessCut)
+      const staffCut = tokenNumber <= 15 ? 60 : 40
+      totalComm += Math.min(price, staffCut)
     }
     return totalComm
   }, [tokens, staffId, qty, price])
@@ -903,11 +960,20 @@ function TokenSalesSection({
                     <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
                       {formatCurrency(t.commission)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right flex items-center justify-end gap-1.5">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-9 text-destructive hover:text-destructive"
+                        className="size-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+                        onClick={() => setEditingToken(t)}
+                        aria-label="Editar ficha"
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-destructive hover:text-destructive"
                         onClick={() => deleteMutation.mutate(t.id)}
                         aria-label="Eliminar ficha"
                       >
@@ -938,6 +1004,85 @@ function TokenSalesSection({
             </Table>
           </div>
         )}
+
+        {/* Modal: Editar Comision de Ficha */}
+        <Dialog
+          open={!!editingToken}
+          onOpenChange={(open) => !open && setEditingToken(null)}
+        >
+          <DialogContent className="sm:max-w-[420px]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <Coins className="h-5 w-5 text-amber-600" />
+                Editar Comision de Ficha
+              </DialogTitle>
+              <DialogDescription>
+                Ajusta la comision y datos de la ficha para {editingToken?.staff?.name}.
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleUpdateSubmit} className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-qty">Cantidad</Label>
+                <Input
+                  id="edit-qty"
+                  type="number"
+                  min={1}
+                  value={editQuantity}
+                  onChange={(e) => setEditQuantity(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-price">Precio Unitario</Label>
+                <Input
+                  id="edit-price"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={editUnitPrice}
+                  onChange={(e) => setEditUnitPrice(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-comm">Comision de la Ficha ($)</Label>
+                <Input
+                  id="edit-comm"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={editCommission}
+                  onChange={(e) => setEditCommission(e.target.value)}
+                  className="h-10 border-amber-300 focus:border-amber-500 focus:ring-amber-500 font-bold"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Ingresa el monto total de comision asignado a este lote de fichas.
+                </p>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0 mt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingToken(null)}
+                  disabled={updateMutation.isPending}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                  disabled={updateMutation.isPending}
+                >
+                  {updateMutation.isPending ? "Guardando..." : "Guardar Cambios"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   )

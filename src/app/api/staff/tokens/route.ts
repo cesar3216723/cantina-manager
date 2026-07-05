@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     const unitPrice =
       typeof body.unitPrice === "number" && !isNaN(body.unitPrice)
         ? body.unitPrice
-        : 60;
+        : 120;
 
     // total = quantity * unitPrice (override si viene en el body)
     const total =
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
         : quantity * unitPrice;
 
     // Comision: si el body trae un numero especifico se usa; si no, se calcula
-    // usando la regla de negocio: ficha 1 a 15 el negocio se queda con $60, de la 16 en adelante se queda con $40
+    // usando la regla de negocio: ficha 1 a 15 la empleada recibe $60 de comision, de la 16 en adelante recibe $40
     let commission: number;
     if (
       typeof body.commission === "number" &&
@@ -153,9 +153,8 @@ export async function POST(request: NextRequest) {
       let totalCommission = 0;
       for (let i = 1; i <= quantity; i++) {
         const tokenNumber = existingQuantity + i;
-        const businessCut = tokenNumber <= 15 ? 60 : 40;
-        const staffCut = Math.max(0, unitPrice - businessCut);
-        totalCommission += staffCut;
+        const staffCut = tokenNumber <= 15 ? 60 : 40;
+        totalCommission += Math.min(unitPrice, staffCut);
       }
       commission = totalCommission;
     }

@@ -1114,7 +1114,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
   const [staffId, setStaffId] = useState("");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [unitPrice, setUnitPrice] = useState("60");
+  const [unitPrice, setUnitPrice] = useState("120");
   const [paymentMethod, setPaymentMethod] = useState<"EFECTIVO" | "TARJETA" | "TRANSFERENCIA">("EFECTIVO");
 
   // Personal activo
@@ -1176,7 +1176,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
   const qty = parseInt(quantity) || 0;
   const price = parseFloat(unitPrice) || 0;
   const totalCalc = qty * price;
-
+  
   // Calculo estimado de comision en frontend segun la regla de negocio
   const commissionCalc = useMemo(() => {
     if (!staffId || qty <= 0) return 0;
@@ -1187,8 +1187,8 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
     let totalComm = 0;
     for (let i = 1; i <= qty; i++) {
       const tokenNumber = existingQty + i;
-      const businessCut = tokenNumber <= 15 ? 60 : 40;
-      totalComm += Math.max(0, price - businessCut);
+      const staffCut = tokenNumber <= 15 ? 60 : 40;
+      totalComm += Math.min(price, staffCut);
     }
     return totalComm;
   }, [tokens, staffId, qty, price]);
