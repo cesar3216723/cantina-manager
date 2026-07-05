@@ -82,6 +82,8 @@ interface Staff {
   id: string;
   name: string;
   salary: number;
+  tokenCommissionType?: string;
+  tokenCommissionValue?: number;
   active: boolean;
 }
 
@@ -1180,6 +1182,11 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
   // Calculo estimado de comision en frontend segun la regla de negocio
   const commissionCalc = useMemo(() => {
     if (!staffId || qty <= 0) return 0;
+    const employee = staffList.find((s) => s.id === staffId);
+    if (employee?.tokenCommissionType === "FIXED") {
+      return qty * (employee.tokenCommissionValue ?? 60);
+    }
+
     const existingQty = tokens
       .filter((t) => t.staffId === staffId)
       .reduce((sum, t) => sum + t.quantity, 0);
@@ -1191,7 +1198,7 @@ function TokensPOS({ selectedDate }: { selectedDate: string }) {
       totalComm += Math.min(price, staffCut);
     }
     return totalComm;
-  }, [tokens, staffId, qty, price]);
+  }, [tokens, staffList, staffId, qty, price]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

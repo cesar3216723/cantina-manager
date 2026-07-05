@@ -63,10 +63,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const tokenCommissionType =
+      typeof body.tokenCommissionType === "string"
+        ? body.tokenCommissionType
+        : "DYNAMIC";
+    const tokenCommissionValue =
+      typeof body.tokenCommissionValue === "number" &&
+      !isNaN(body.tokenCommissionValue)
+        ? body.tokenCommissionValue
+        : 60;
+
     const staff = await db.staff.create({
       data: {
         name,
         salary,
+        tokenCommissionType,
+        tokenCommissionValue,
         active,
         sortOrder,
       },

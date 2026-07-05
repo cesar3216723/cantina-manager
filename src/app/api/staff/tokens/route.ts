@@ -135,28 +135,37 @@ export async function POST(request: NextRequest) {
     ) {
       commission = body.commission;
     } else {
-      const dayStart = startOfDay(date);
-      const dayEnd = endOfDay(date);
-
-      // Sumar fichas previas de la empleada en el dia
-      const currentTokensSum = await db.tokenSale.aggregate({
-        where: {
-          staffId,
-          date: { gte: dayStart, lte: dayEnd },
-        },
-        _sum: {
-          quantity: true,
-        },
+      // Buscar el staff para obtener su regla de comision
+      const employee = await db.staff.findUnique({
+        where: { id: staffId },
       });
-      const existingQuantity = currentTokensSum._sum.quantity ?? 0;
 
-      let totalCommission = 0;
-      for (let i = 1; i <= quantity; i++) {
-        const tokenNumber = existingQuantity + i;
-        const staffCut = tokenNumber <= 15 ? 60 : 80;
-        totalCommission += Math.min(unitPrice, staffCut);
+      if (employee?.tokenCommissionType === "FIXED") {
+        commission = quantity * (employee.tokenCommissionValue ?? 60);
+      } else {
+        const dayStart = startOfDay(date);
+        const dayEnd = endOfDay(date);
+
+        // Sumar fichas previas de la empleada en el dia
+        const currentTokensSum = await db.tokenSale.aggregate({
+          where: {
+            staffId,
+            date: { gte: dayStart, lte: dayEnd },
+          },
+          _sum: {
+            quantity: true,
+          },
+        });
+        const existingQuantity = currentTokensSum._sum.quantity ?? 0;
+
+        let totalCommission = 0;
+        for (let i = 1; i <= quantity; i++) {
+          const tokenNumber = existingQuantity + i;
+          const staffCut = tokenNumber <= 15 ? 60 : 80;
+          totalCommission += Math.min(unitPrice, staffCut);
+        }
+        commission = totalCommission;
       }
-      commission = totalCommission;
     }
 
     const paymentMethod = typeof body.paymentMethod === "string" ? body.paymentMethod : "EFECTIVO";

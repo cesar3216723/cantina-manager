@@ -51,6 +51,8 @@ export async function PUT(
     const data: {
       name?: string;
       salary?: number;
+      tokenCommissionType?: string;
+      tokenCommissionValue?: number;
       active?: boolean;
       sortOrder?: number;
     } = {};
@@ -74,6 +76,12 @@ export async function PUT(
 
     if (typeof body.salary === "number" && !isNaN(body.salary)) {
       data.salary = body.salary;
+    }
+    if (typeof body.tokenCommissionType === "string") {
+      data.tokenCommissionType = body.tokenCommissionType;
+    }
+    if (typeof body.tokenCommissionValue === "number" && !isNaN(body.tokenCommissionValue)) {
+      data.tokenCommissionValue = body.tokenCommissionValue;
     }
     if (typeof body.active === "boolean") {
       data.active = body.active;

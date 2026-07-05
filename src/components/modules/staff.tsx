@@ -88,6 +88,8 @@ interface Staff {
   id: string
   name: string
   salary: number
+  tokenCommissionType: string
+  tokenCommissionValue: number
   active: boolean
   sortOrder: number
 }
@@ -180,7 +182,14 @@ function PersonalTab() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; salary: number; active: boolean; sortOrder: number }) =>
+    mutationFn: (data: {
+      name: string
+      salary: number
+      tokenCommissionType: string
+      tokenCommissionValue: number
+      active: boolean
+      sortOrder: number
+    }) =>
       apiFetch<Staff>("/api/staff", {
         method: "POST",
         body: JSON.stringify(data),
@@ -199,7 +208,14 @@ function PersonalTab() {
       data,
     }: {
       id: string
-      data: { name: string; salary: number; active: boolean; sortOrder: number }
+      data: {
+        name: string
+        salary: number
+        tokenCommissionType: string
+        tokenCommissionValue: number
+        active: boolean
+        sortOrder: number
+      }
     }) =>
       apiFetch<Staff>(`/api/staff/${id}`, {
         method: "PUT",
@@ -281,6 +297,7 @@ function PersonalTab() {
                 <TableRow>
                   <TableHead>Nombre</TableHead>
                   <TableHead className="text-right">Sueldo diario</TableHead>
+                  <TableHead className="text-right">Comisión de Ficha</TableHead>
                   <TableHead className="text-center">Estado</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
@@ -288,9 +305,14 @@ function PersonalTab() {
               <TableBody>
                 {staff.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell className="font-semibold text-amber-900 dark:text-amber-300">{s.name}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatCurrency(s.salary)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-bold">
+                      {s.tokenCommissionType === "DYNAMIC"
+                        ? "General ($60/$80)"
+                        : formatCurrency(s.tokenCommissionValue ?? 60)}
                     </TableCell>
                     <TableCell className="text-center">
                       {s.active ? (
@@ -402,6 +424,8 @@ function StaffFormDialog({
   onSubmit: (data: {
     name: string
     salary: number
+    tokenCommissionType: string
+    tokenCommissionValue: number
     active: boolean
     sortOrder: number
   }) => void
@@ -442,6 +466,8 @@ function StaffForm({
   onSubmit: (data: {
     name: string
     salary: number
+    tokenCommissionType: string
+    tokenCommissionValue: number
     active: boolean
     sortOrder: number
   }) => void
@@ -451,6 +477,12 @@ function StaffForm({
   const [name, setName] = useState(editing?.name ?? "")
   const [salary, setSalary] = useState(
     editing ? String(editing.salary) : ""
+  )
+  const [tokenCommissionType, setTokenCommissionType] = useState(
+    editing?.tokenCommissionType ?? "DYNAMIC"
+  )
+  const [tokenCommissionValue, setTokenCommissionValue] = useState(
+    editing ? String(editing.tokenCommissionValue) : "60"
   )
   const [active, setActive] = useState(editing ? editing.active : true)
   const [sortOrder, setSortOrder] = useState(
@@ -466,6 +498,8 @@ function StaffForm({
     onSubmit({
       name: name.trim(),
       salary: parseFloat(salary) || 0,
+      tokenCommissionType,
+      tokenCommissionValue: parseFloat(tokenCommissionValue) || 0,
       active,
       sortOrder: parseInt(sortOrder) || 0,
     })
@@ -495,6 +529,35 @@ function StaffForm({
           placeholder="0.00"
         />
       </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="commissionType">Comisión de Ficha</Label>
+        <Select value={tokenCommissionType} onValueChange={setTokenCommissionType}>
+          <SelectTrigger id="commissionType" className="w-full">
+            <SelectValue placeholder="Selecciona..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="DYNAMIC">Escala general (1-15: $60, 16+: $80)</SelectItem>
+            <SelectItem value="FIXED">Comisión Fija</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {tokenCommissionType === "FIXED" && (
+        <div className="space-y-2">
+          <Label htmlFor="commissionValue">Monto de Comisión por Ficha (MXN)</Label>
+          <Input
+            id="commissionValue"
+            type="number"
+            min={0}
+            step="0.5"
+            value={tokenCommissionValue}
+            onChange={(e) => setTokenCommissionValue(e.target.value)}
+            placeholder="60.00"
+          />
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="sortOrder">Orden</Label>
         <Input
@@ -829,6 +892,11 @@ function TokenSalesSection({
   // Calculo estimado de comision en frontend segun la regla de negocio
   const commissionCalc = useMemo(() => {
     if (!staffId || qty <= 0) return 0
+    const employee = staff.find((s) => s.id === staffId)
+    if (employee?.tokenCommissionType === "FIXED") {
+      return qty * (employee.tokenCommissionValue ?? 60)
+    }
+
     const existingQty = tokens
       .filter((t) => t.staffId === staffId)
       .reduce((sum, t) => sum + t.quantity, 0)
@@ -836,11 +904,11 @@ function TokenSalesSection({
     let totalComm = 0
     for (let i = 1; i <= qty; i++) {
       const tokenNumber = existingQty + i
-      const staffCut = tokenNumber <= 15 ? 60 : 40
+      const staffCut = tokenNumber <= 15 ? 60 : 80
       totalComm += Math.min(price, staffCut)
     }
     return totalComm
-  }, [tokens, staffId, qty, price])
+  }, [tokens, staff, staffId, qty, price])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
