@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Search,
 } from "lucide-react"
 
 import { apiFetch } from "@/lib/api-client"
@@ -81,6 +82,7 @@ interface Row {
   exit: number
   physicalCount: number
   observations: string
+  sortOrder: number
 }
 
 type EditableField = "initialQty" | "entry" | "exit" | "physicalCount" | "observations"
@@ -136,6 +138,7 @@ export function InventoryModule() {
   const [selectedDate, setSelectedDate] = useState<string>(todayDateInput())
   const [overrides, setOverrides] = useState<Record<string, Partial<Row>>>({})
   const [dirty, setDirty] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
 
   // Queries
   const inventoryQuery = useQuery<InventoryRecord[]>({
@@ -172,18 +175,23 @@ export function InventoryModule() {
         exit: inv?.exit ?? 0,
         physicalCount: inv?.physicalCount ?? 0,
         observations: inv?.observations ?? "",
+        sortOrder: p.sortOrder,
       }
       const ov = overrides[p.id]
       return ov ? { ...base, ...ov } : base
     })
 
-    merged.sort((a, b) => {
-      const c = categoryRank(a.category) - categoryRank(b.category)
-      if (c !== 0) return c
-      return a.name.localeCompare(b.name)
-    })
+    // Ordenar exactamente por el sortOrder del catalogo
+    merged.sort((a, b) => a.sortOrder - b.sortOrder)
     return merged
   }, [records, products, overrides])
+
+  // Filtrado por termino de busqueda
+  const filteredRows = useMemo(() => {
+    return rows.filter((r) =>
+      r.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  }, [rows, searchTerm])
 
   // Init mutation
   const initMutation = useMutation({
@@ -284,18 +292,6 @@ export function InventoryModule() {
     })
   }
 
-  // Group rows by category
-  const grouped = useMemo(() => {
-    const map = new Map<string, Row[]>()
-    for (const r of rows) {
-      const arr = map.get(r.category) ?? []
-      arr.push(r)
-      map.set(r.category, arr)
-    }
-    return Array.from(map.entries()).sort(
-      (a, b) => categoryRank(a[0]) - categoryRank(b[0])
-    )
-  }, [rows])
 
   // Summary cards
   const summary = useMemo(() => {
@@ -450,13 +446,25 @@ export function InventoryModule() {
 
       {/* Main table */}
       <Card className="gap-0 p-0">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <h3 className="text-sm font-semibold">
-            Inventario del {formatDateShortSafe(selectedDate)}
-          </h3>
-          <span className="text-xs text-muted-foreground">
-            {rows.length} producto{rows.length === 1 ? "" : "s"}
-          </span>
+        <div className="flex flex-col sm:flex-row items-center justify-between border-b px-4 py-3 gap-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">
+              Inventario del {formatDateShortSafe(selectedDate)}
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {filteredRows.length} de {rows.length} producto{rows.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar producto..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 h-9 w-full bg-card"
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -509,12 +517,20 @@ export function InventoryModule() {
                     usa &quot;Inicializar Inventario&quot;.
                   </TableCell>
                 </TableRow>
+              ) : filteredRows.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={12}
+                    className="py-10 text-center text-sm text-muted-foreground"
+                  >
+                    No se encontraron productos coincidentes con la búsqueda.
+                  </TableCell>
+                </TableRow>
               ) : (
-                grouped.map(([cat, catRows]) => (
-                  <CategoryGroup
-                    key={cat}
-                    category={cat}
-                    rows={catRows}
+                filteredRows.map((r) => (
+                  <InventoryRow
+                    key={r.productId}
+                    row={r}
                     updateField={updateField}
                   />
                 ))
@@ -572,44 +588,6 @@ export function InventoryModule() {
 // ============================================================
 // Sub-componentes
 // ============================================================
-function CategoryGroup({
-  category,
-  rows,
-  updateField,
-}: {
-  category: string
-  rows: Row[]
-  updateField: (productId: string, field: EditableField, value: string) => void
-}) {
-  return (
-    <>
-      <TableRow className="bg-muted/40 hover:bg-muted/40">
-        <TableCell colSpan={12} className="py-2">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={
-                CATEGORY_COLORS[category] ?? CATEGORY_COLORS.OTROS
-              }
-            >
-              {category}
-            </Badge>
-            <span className="text-xs text-muted-foreground">
-              {rows.length} producto{rows.length === 1 ? "" : "s"}
-            </span>
-          </div>
-        </TableCell>
-      </TableRow>
-      {rows.map((r) => (
-        <InventoryRow
-          key={r.productId}
-          row={r}
-          updateField={updateField}
-        />
-      ))}
-    </>
-  )
-}
 
 function InventoryRow({
   row,
