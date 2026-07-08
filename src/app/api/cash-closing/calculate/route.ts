@@ -31,6 +31,21 @@ export async function POST(req: NextRequest) {
     const dayStart = startOfDay(d);
     const dayEnd = endOfDay(d);
 
+    const eloy = await db.staff.findFirst({
+      where: { name: { equals: "ELOY", mode: "insensitive" } },
+    });
+    const eloyId = eloy?.id;
+
+    const salesWhere: any = {
+      date: { gte: dayStart, lte: dayEnd },
+    };
+    if (eloyId) {
+      salesWhere.OR = [
+        { staffId: null },
+        { staffId: { not: eloyId } }
+      ];
+    }
+
     // Run all aggregations in parallel for speed
     const [
       salesAgg,
@@ -44,12 +59,12 @@ export async function POST(req: NextRequest) {
     ] = await Promise.all([
       // Total sales for the day (all types, include complimentary)
       db.sale.aggregate({
-        where: { date: { gte: dayStart, lte: dayEnd } },
+        where: salesWhere,
         _sum: { total: true },
       }),
       // Sales details to calculate payment method splits
       db.sale.findMany({
-        where: { date: { gte: dayStart, lte: dayEnd } },
+        where: salesWhere,
       }),
       // Expenses for the day
       db.expense.findMany({

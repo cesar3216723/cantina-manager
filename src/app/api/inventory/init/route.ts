@@ -10,8 +10,8 @@ function parseDate(dateStr: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function computeFields(initialQty: number) {
-  const finalQty = initialQty || 0; // entry/exit/physicalCount all default to 0
+function computeFields(initialQty: number, entry: number, exit: number) {
+  const finalQty = (initialQty || 0) + (entry || 0) - (exit || 0);
   const difference = 0 - finalQty; // physicalCount (0) - finalQty
   return { finalQty, difference };
 }
@@ -75,6 +75,18 @@ export async function POST(req: NextRequest) {
     });
     const prevMap = new Map(prevRecords.map((r) => [r.productId, r.finalQty]));
 
+    // Obtener las ventas del dia para setear las salidas correctas
+    const salesGrouped = await db.sale.groupBy({
+      by: ['productId'],
+      where: {
+        date: { gte: startOfDay(dateObj), lte: endOfDay(dateObj) }
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+    const salesMap = new Map(salesGrouped.map((s) => [s.productId, s._sum.quantity ?? 0]));
+
     // 4. Create missing records
     const toCreate = activeProducts.filter(
       (p) => !existingMap.has(p.id)
@@ -89,14 +101,15 @@ export async function POST(req: NextRequest) {
       const txResults = await db.$transaction(
         toCreate.map((p) => {
           const initialQty = prevMap.get(p.id) ?? 0;
-          const { finalQty, difference } = computeFields(initialQty);
+          const exit = salesMap.get(p.id) ?? 0;
+          const { finalQty, difference } = computeFields(initialQty, 0, exit);
           return db.dailyInventory.create({
             data: {
               date: dateObj,
               productId: p.id,
               initialQty,
               entry: 0,
-              exit: 0,
+              exit,
               finalQty,
               physicalCount: 0,
               difference,

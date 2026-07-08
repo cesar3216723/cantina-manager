@@ -34,15 +34,16 @@ export async function GET(req: NextRequest) {
       date?: { gte?: Date; lte?: Date };
     } = {};
 
+    let targetDate: Date | null = null;
     if (date) {
-      const d = parseDate(date);
-      if (!d) {
+      targetDate = parseDate(date);
+      if (!targetDate) {
         return NextResponse.json(
           { error: "Fecha invalida" },
           { status: 400 }
         );
       }
-      where.date = { gte: startOfDay(d), lte: endOfDay(d) };
+      where.date = { gte: startOfDay(targetDate), lte: endOfDay(targetDate) };
     } else if (from || to) {
       const filter: { gte?: Date; lte?: Date } = {};
       if (from) {
@@ -64,60 +65,104 @@ export async function GET(req: NextRequest) {
 
     // Auto-initialize when querying a single date with no records:
     // copy the previous day's finalQty as initialQty for active products.
-    if (date && records.length === 0) {
-      const d = parseDate(date);
-      if (d) {
-        const prev = new Date(d);
-        prev.setDate(prev.getDate() - 1);
-        const prevRecords = await db.dailyInventory.findMany({
-          where: {
-            date: { gte: startOfDay(prev), lte: endOfDay(prev) },
-          },
-          include: { product: true },
-        });
+    if (date && records.length === 0 && targetDate) {
+      const d = targetDate;
+      const prev = new Date(d);
+      prev.setDate(prev.getDate() - 1);
+      const prevRecords = await db.dailyInventory.findMany({
+        where: {
+          date: { gte: startOfDay(prev), lte: endOfDay(prev) },
+        },
+        include: { product: true },
+      });
 
-        // Map of productId -> finalQty from previous day (defaults to 0)
-        const prevMap = new Map<string, number>();
-        for (const r of prevRecords) {
-          prevMap.set(r.productId, r.finalQty);
+      // Map of productId -> finalQty from previous day (defaults to 0)
+      const prevMap = new Map<string, number>();
+      for (const r of prevRecords) {
+        prevMap.set(r.productId, r.finalQty);
+      }
+
+      // Obtener las ventas del dia para setear las salidas correctas
+      const salesGrouped = await db.sale.groupBy({
+        by: ['productId'],
+        where: {
+          date: { gte: startOfDay(d), lte: endOfDay(d) }
+        },
+        _sum: {
+          quantity: true
         }
+      });
+      const salesMap = new Map(salesGrouped.map((s) => [s.productId, s._sum.quantity ?? 0]));
 
-        const activeProducts = await db.product.findMany({
-          where: { active: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        });
+      const activeProducts = await db.product.findMany({
+        where: { active: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      });
 
-        if (activeProducts.length > 0) {
-          const created = await Promise.all(
-            activeProducts.map((p) => {
-              const initialQty = prevMap.get(p.id) ?? 0;
-              const { finalQty, difference } = computeFields(
+      if (activeProducts.length > 0) {
+        const created = await Promise.all(
+          activeProducts.map((p) => {
+            const initialQty = prevMap.get(p.id) ?? 0;
+            const exit = salesMap.get(p.id) ?? 0;
+            const { finalQty, difference } = computeFields(
+              initialQty,
+              0,
+              exit,
+              0
+            );
+            return db.dailyInventory.upsert({
+              where: {
+                date_productId: { date: d, productId: p.id },
+              },
+              update: {},
+              create: {
+                date: d,
+                productId: p.id,
                 initialQty,
-                0,
-                0,
-                0
-              );
-              return db.dailyInventory.upsert({
-                where: {
-                  date_productId: { date: d, productId: p.id },
-                },
-                update: {},
-                create: {
-                  date: d,
-                  productId: p.id,
-                  initialQty,
-                  entry: 0,
-                  exit: 0,
-                  finalQty,
-                  physicalCount: 0,
-                  difference,
-                  observations: null,
-                },
-                include: { product: true },
-              });
-            })
-          );
-          return NextResponse.json(created);
+                entry: 0,
+                exit,
+                finalQty,
+                physicalCount: 0,
+                difference,
+                observations: null,
+              },
+              include: { product: true },
+            });
+          })
+        );
+        return NextResponse.json(created);
+      }
+    }
+
+    // Sincronizar dinamicamente las salidas (exit) de los registros existentes si se consulta por una fecha especifica
+    if (date && targetDate && records.length > 0) {
+      const d = targetDate;
+      const salesGrouped = await db.sale.groupBy({
+        by: ['productId'],
+        where: {
+          date: { gte: startOfDay(d), lte: endOfDay(d) }
+        },
+        _sum: {
+          quantity: true
+        }
+      });
+      const salesMap = new Map(salesGrouped.map((s) => [s.productId, s._sum.quantity ?? 0]));
+
+      for (const r of records) {
+        const realExit = salesMap.get(r.productId) ?? 0;
+        if (r.exit !== realExit) {
+          const { finalQty, difference } = computeFields(r.initialQty, r.entry, realExit, r.physicalCount);
+          await db.dailyInventory.update({
+            where: { id: r.id },
+            data: {
+              exit: realExit,
+              finalQty,
+              difference,
+            }
+          });
+          r.exit = realExit;
+          r.finalQty = finalQty;
+          r.difference = difference;
         }
       }
     }
