@@ -36,6 +36,7 @@ model Staff {
   id                   String   @id @default(cuid())
   name                 String   @unique
   salary               Float    @default(0) // sueldo diario
+  role                 String   @default("EMPLEADO") // DUEÑO, JEFA, EMPLEADO
   tokenCommissionType  String   @default("DYNAMIC") // DYNAMIC (1-15: $60, 16+: $80) o FIXED (comision fija)
   tokenCommissionValue Float    @default(60)       // valor de la comision si es FIXED
   active               Boolean  @default(true)

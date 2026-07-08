@@ -73,10 +73,13 @@ export async function POST(request: NextRequest) {
         ? body.tokenCommissionValue
         : 60;
 
+    const role = typeof body.role === "string" ? body.role.trim() : "EMPLEADO";
+
     const staff = await db.staff.create({
       data: {
         name,
         salary,
+        role,
         tokenCommissionType,
         tokenCommissionValue,
         active,

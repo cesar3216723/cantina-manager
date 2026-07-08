@@ -50,6 +50,7 @@ export async function PUT(
 
     const data: {
       name?: string;
+      role?: string;
       salary?: number;
       tokenCommissionType?: string;
       tokenCommissionValue?: number;
@@ -74,6 +75,9 @@ export async function PUT(
       data.name = name;
     }
 
+    if (typeof body.role === "string") {
+      data.role = body.role;
+    }
     if (typeof body.salary === "number" && !isNaN(body.salary)) {
       data.salary = body.salary;
     }

@@ -88,6 +88,7 @@ interface Staff {
   id: string
   name: string
   salary: number
+  role: string
   tokenCommissionType: string
   tokenCommissionValue: number
   active: boolean
@@ -184,6 +185,7 @@ function PersonalTab() {
   const createMutation = useMutation({
     mutationFn: (data: {
       name: string
+      role: string
       salary: number
       tokenCommissionType: string
       tokenCommissionValue: number
@@ -210,6 +212,7 @@ function PersonalTab() {
       id: string
       data: {
         name: string
+        role: string
         salary: number
         tokenCommissionType: string
         tokenCommissionValue: number
@@ -296,6 +299,7 @@ function PersonalTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
+                  <TableHead>Rol</TableHead>
                   <TableHead className="text-right">Sueldo diario</TableHead>
                   <TableHead className="text-right">Comisión de Ficha</TableHead>
                   <TableHead className="text-center">Estado</TableHead>
@@ -306,6 +310,20 @@ function PersonalTab() {
                 {staff.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-semibold text-amber-900 dark:text-amber-300">{s.name}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          s.role === "DUEÑO"
+                            ? "bg-rose-100 text-rose-800 border-rose-200 hover:bg-rose-100 dark:bg-rose-900/40 dark:text-rose-350"
+                            : s.role === "JEFA"
+                            ? "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/40 dark:text-purple-350"
+                            : "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/40 dark:text-blue-350"
+                        }
+                      >
+                        {s.role || "EMPLEADO"}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatCurrency(s.salary)}
                     </TableCell>
@@ -423,6 +441,7 @@ function StaffFormDialog({
   editing: Staff | null
   onSubmit: (data: {
     name: string
+    role: string
     salary: number
     tokenCommissionType: string
     tokenCommissionValue: number
@@ -465,6 +484,7 @@ function StaffForm({
   editing: Staff | null
   onSubmit: (data: {
     name: string
+    role: string
     salary: number
     tokenCommissionType: string
     tokenCommissionValue: number
@@ -475,6 +495,7 @@ function StaffForm({
   onCancel: () => void
 }) {
   const [name, setName] = useState(editing?.name ?? "")
+  const [role, setRole] = useState(editing?.role ?? "EMPLEADO")
   const [salary, setSalary] = useState(
     editing ? String(editing.salary) : ""
   )
@@ -497,6 +518,7 @@ function StaffForm({
     }
     onSubmit({
       name: name.trim(),
+      role,
       salary: parseFloat(salary) || 0,
       tokenCommissionType,
       tokenCommissionValue: parseFloat(tokenCommissionValue) || 0,
@@ -516,6 +538,19 @@ function StaffForm({
           placeholder="Ej. ELOY"
           autoFocus
         />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="role">Rol</Label>
+        <Select value={role} onValueChange={setRole}>
+          <SelectTrigger id="role" className="w-full">
+            <SelectValue placeholder="Selecciona..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="EMPLEADO">Empleado</SelectItem>
+            <SelectItem value="JEFA">Jefa</SelectItem>
+            <SelectItem value="DUEÑO">Dueño</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <div className="space-y-2">
         <Label htmlFor="salary">Sueldo diario (MXN)</Label>
