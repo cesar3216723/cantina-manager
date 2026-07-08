@@ -81,6 +81,7 @@ interface Product {
 interface Staff {
   id: string;
   name: string;
+  role?: string;
   salary: number;
   tokenCommissionType?: string;
   tokenCommissionValue?: number;
@@ -296,8 +297,22 @@ const STAFF_PRICES: Record<string, number> = {
   "CHICLES": 28,
 };
 
-function getProductPrice(product: Product, saleType: string): number {
+function getProductPrice(
+  product: Product,
+  saleType: string,
+  selectedStaffId?: string,
+  staffList?: Staff[]
+): number {
   if (saleType === "PERSONAL") {
+    // Si el empleado seleccionado es ELOY (dueño), el costo es $0
+    const employee = staffList?.find((s) => s.id === selectedStaffId);
+    if (
+      employee &&
+      (employee.name.toUpperCase() === "ELOY" || employee.role === "DUEÑO")
+    ) {
+      return 0;
+    }
+
     const staffPrice = STAFF_PRICES[product.name];
     if (staffPrice !== undefined) {
       return staffPrice;
@@ -351,6 +366,18 @@ function SalesPOS({
   const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"EFECTIVO" | "TARJETA" | "TRANSFERENCIA">("EFECTIVO");
 
+  // Actualizar los precios del carrito cuando cambia el empleado seleccionado
+  useEffect(() => {
+    if (saleType === "PERSONAL") {
+      setCart((prev) =>
+        prev.map((l) => ({
+          ...l,
+          unitPrice: getProductPrice(l.product, saleType, selectedStaffId, staffList),
+        }))
+      );
+    }
+  }, [selectedStaffId, saleType, staffList]);
+
   // Filtrar productos por busqueda
   const filteredProducts = useMemo(() => {
     if (!search.trim()) return products;
@@ -403,7 +430,7 @@ function SalesPOS({
         {
           product,
           quantity: 1,
-          unitPrice: getProductPrice(product, saleType),
+          unitPrice: getProductPrice(product, saleType, selectedStaffId, staffList),
           isComplimentary: false,
         },
       ];
@@ -597,7 +624,7 @@ function SalesPOS({
                             </div>
                              <div className="shrink-0 text-right">
                                <div className="font-semibold text-amber-700 dark:text-amber-400">
-                                 {formatCurrency(getProductPrice(p, saleType))}
+                                 {formatCurrency(getProductPrice(p, saleType, selectedStaffId, staffList))}
                                </div>
                              </div>
                              <Plus className="h-4 w-4 shrink-0 text-amber-600" />
