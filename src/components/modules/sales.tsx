@@ -266,6 +266,47 @@ export function SalesModule({
   );
 }
 
+const STAFF_PRICES: Record<string, number> = {
+  "MEDIA LAGER": 14,
+  "MEDIA ROJA": 14,
+  "MEDIA AZUL": 14,
+  "MEDIA VICTORIA": 17,
+  "MEDIA CORONA": 17,
+  "MEDIA INDIO": 17,
+  "MEGA LAGER": 37,
+  "MEGA ROJA": 35,
+  "MEGA AZUL": 35,
+  "MEGA VICTORIA": 41,
+  "MEGA CORONA": 41,
+  "MEGA INDIO": 41,
+  "CLAMATO (Botella)": 27,
+  "COCA 355": 13,
+  "PEÑAFIEL 355": 11,
+  "TORONJA 355": 20,
+  "CIGARRO": 6,
+  "CACAHUATE": 13,
+  "CACAHUATE SALADO": 13,
+  "CACAHUATE ENCHILADO": 13,
+  "CACAHUATE AJO": 13,
+  "CACAHUATE MIXTO": 13,
+  "SEMILLAS": 10,
+  "CHICARRON": 11,
+  "SOPA": 14,
+  "BOOS": 40,
+  "CHICLES": 28,
+};
+
+function getProductPrice(product: Product, saleType: string): number {
+  if (saleType === "PERSONAL") {
+    const staffPrice = STAFF_PRICES[product.name];
+    if (staffPrice !== undefined) {
+      return staffPrice;
+    }
+    return product.purchasePrice || 0;
+  }
+  return product.salePrice;
+}
+
 // ---------- POS Component (Cuenta/Comanda) ----------
 function SalesPOS({
   saleType,
@@ -362,7 +403,7 @@ function SalesPOS({
         {
           product,
           quantity: 1,
-          unitPrice: product.salePrice,
+          unitPrice: getProductPrice(product, saleType),
           isComplimentary: false,
         },
       ];
@@ -554,12 +595,12 @@ function SalesPOS({
                                 {p.presentation || p.category}
                               </div>
                             </div>
-                            <div className="shrink-0 text-right">
-                              <div className="font-semibold text-amber-700 dark:text-amber-400">
-                                {formatCurrency(p.salePrice)}
-                              </div>
-                            </div>
-                            <Plus className="h-4 w-4 shrink-0 text-amber-600" />
+                             <div className="shrink-0 text-right">
+                               <div className="font-semibold text-amber-700 dark:text-amber-400">
+                                 {formatCurrency(getProductPrice(p, saleType))}
+                               </div>
+                             </div>
+                             <Plus className="h-4 w-4 shrink-0 text-amber-600" />
                           </button>
                         ))}
                       </div>
