@@ -540,6 +540,112 @@ function CashClosingForm({
         )}
       </div>
 
+      {/* Cuadro Resumen Estilo Excel de Turno */}
+      <Card className="border border-amber-200 shadow-md">
+        <CardHeader className="pb-3 bg-amber-50/50 dark:bg-amber-950/10">
+          <CardTitle className="flex items-center gap-2 text-base font-bold text-amber-800 dark:text-amber-300">
+            <Scale className="h-5 w-5" />
+            Resumen de Turno (Caja y Ventas)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-6">
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader className="bg-muted/40">
+                <TableRow>
+                  <TableHead className="font-bold text-foreground">CONCEPTO</TableHead>
+                  <TableHead className="text-right font-bold text-foreground">TOTAL</TableHead>
+                  <TableHead className="text-center font-bold text-foreground">METODO DE PAGO</TableHead>
+                  <TableHead className="text-right font-bold text-foreground">SUBTOTAL</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {/* Fila: VENTA */}
+                <TableRow className="hover:bg-transparent">
+                  <TableCell rowSpan={2} className="align-middle font-extrabold text-sm bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-r w-[250px]">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                      VENTA
+                    </div>
+                  </TableCell>
+                  <TableCell rowSpan={2} className="align-middle text-right font-extrabold text-base bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 border-r tabular-nums">
+                    {formatCurrency(totalSales)}
+                  </TableCell>
+                  <TableCell className="text-center font-semibold text-xs py-2 bg-yellow-400/10 dark:bg-yellow-400/5">
+                    ELECTRONICO
+                  </TableCell>
+                  <TableCell className="text-right font-bold py-2 bg-yellow-400/10 dark:bg-yellow-400/5 tabular-nums text-xs">
+                    {formatCurrency(electronicSales)}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell className="text-center font-semibold text-xs py-2 bg-emerald-500/5">
+                    EFECTIVO
+                  </TableCell>
+                  <TableCell className="text-right font-bold py-2 bg-emerald-500/5 tabular-nums text-xs">
+                    {formatCurrency(cashSales)}
+                  </TableCell>
+                </TableRow>
+
+                {/* Fila: CAJA INICIAL */}
+                <TableRow className="hover:bg-transparent border-t-2">
+                  <TableCell rowSpan={2} className="align-middle font-extrabold text-sm bg-blue-500/10 text-blue-800 dark:text-blue-300 border-r">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-blue-500" />
+                      CAJA INICIAL
+                    </div>
+                  </TableCell>
+                  <TableCell rowSpan={2} className="align-middle text-right font-extrabold text-base bg-blue-500/10 text-blue-800 dark:text-blue-300 border-r tabular-nums">
+                    {formatCurrency(initialCash + initialElectronic)}
+                  </TableCell>
+                  <TableCell className="text-center font-semibold text-xs py-2 bg-blue-500/5">
+                    ELECTRONICO
+                  </TableCell>
+                  <TableCell className="text-right font-bold py-2 bg-blue-500/5 tabular-nums text-xs">
+                    {formatCurrency(initialElectronic)}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell className="text-center font-semibold text-xs py-2 bg-blue-500/5">
+                    EFECTIVO
+                  </TableCell>
+                  <TableCell className="text-right font-bold py-2 bg-blue-500/5 tabular-nums text-xs">
+                    {formatCurrency(initialCash)}
+                  </TableCell>
+                </TableRow>
+
+                {/* Fila: CAJA FINAL */}
+                <TableRow className="hover:bg-transparent border-t-2">
+                  <TableCell rowSpan={2} className="align-middle font-extrabold text-sm bg-fuchsia-500/10 text-fuchsia-800 dark:text-fuchsia-300 border-r">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-fuchsia-500" />
+                      CAJA FINAL
+                    </div>
+                  </TableCell>
+                  <TableCell rowSpan={2} className="align-middle text-right font-extrabold text-base bg-fuchsia-500/10 text-fuchsia-800 dark:text-fuchsia-300 border-r tabular-nums">
+                    {formatCurrency(finalCash + finalElectronic)}
+                  </TableCell>
+                  <TableCell className="text-center font-semibold text-xs py-2 bg-fuchsia-500/5">
+                    ELECTRONICO
+                  </TableCell>
+                  <TableCell className="text-right font-bold py-2 bg-fuchsia-500/5 tabular-nums text-xs">
+                    {formatCurrency(finalElectronic)}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell className="text-center font-semibold text-xs py-2 bg-fuchsia-500/5">
+                    EFECTIVO
+                  </TableCell>
+                  <TableCell className="text-right font-bold py-2 bg-fuchsia-500/5 tabular-nums text-xs">
+                    {formatCurrency(finalCash)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
         {/* ============================ */}

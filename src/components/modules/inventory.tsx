@@ -152,8 +152,38 @@ export function InventoryModule() {
     queryFn: () => apiFetch<Product[]>("/api/products?active=true"),
   })
 
+  const PHYSICAL_INVENTORY_PRODUCTS = [
+    "MEDIA LAGER",
+    "MEDIA AZUL",
+    "MEDIA VICTORIA",
+    "MEDIA CORONA",
+    "MEGA LAGER",
+    "MEGA ROJA",
+    "MEGA AZUL",
+    "MEGA VICTORIA",
+    "MEGA CORONA",
+    "CIGARRO",
+    "CACAHUATE",
+    "CHICARRON",
+    "SEMILLAS",
+    "PAPAS",
+    "COCA 355",
+    "PEÑAFIEL 355",
+    "TORONJA 355",
+    "BOOS",
+    "NEWMIX PALOMA",
+    "NEWMIX VAMPIRO",
+    "NEW MIX CANTARITO",
+    "CLAMATO (Botella)",
+    "SOPA",
+    "MANGUITO",
+    "CHICLES",
+    "SALSA VALENTINA (CHICA)",
+  ];
+
   const records = inventoryQuery.data ?? EMPTY_RECORDS
-  const products = productsQuery.data ?? EMPTY_PRODUCTS
+  const products = (productsQuery.data ?? EMPTY_PRODUCTS)
+    .filter((p) => PHYSICAL_INVENTORY_PRODUCTS.includes(p.name))
 
   // Merge server data with local overrides into editable rows
   const rows = useMemo(() => {

@@ -1212,6 +1212,12 @@ function StaffPaymentsSection({
   onChanged: () => void
 }) {
   const queryClient = useQueryClient()
+  const [customSalaries, setCustomSalaries] = useState<Record<string, number>>({})
+
+  // Reset custom salaries when date changes
+  useEffect(() => {
+    setCustomSalaries({})
+  }, [date])
 
   // Calcula por empleado: sueldo, comision (fichas), consumo (ventas personales), total
   const rows = useMemo(() => {
@@ -1222,7 +1228,8 @@ function StaffPaymentsSection({
       const consumption = personalSales
         .filter((sale) => sale.staffId === s.id)
         .reduce((sum, sale) => sum + sale.total, 0)
-      const salary = s.salary
+      
+      const salary = customSalaries[s.id] !== undefined ? customSalaries[s.id] : s.salary
       const totalToPay = salary + commission - consumption
       const alreadyPaid = existingPayments.some((p) => p.staffId === s.id)
       return {
@@ -1234,7 +1241,7 @@ function StaffPaymentsSection({
         alreadyPaid,
       }
     })
-  }, [staff, tokenSales, personalSales, existingPayments])
+  }, [staff, tokenSales, personalSales, existingPayments, customSalaries])
 
   const totals = useMemo(() => {
     return rows.reduce(
@@ -1304,8 +1311,28 @@ function StaffPaymentsSection({
                 {rows.map((r) => (
                   <TableRow key={r.staff.id}>
                     <TableCell className="font-medium">{r.staff.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(r.salary)}
+                    <TableCell className="text-right p-1 max-w-[120px]">
+                      {r.alreadyPaid ? (
+                        <span className="tabular-nums pr-2 block">{formatCurrency(r.salary)}</span>
+                      ) : (
+                        <div className="flex items-center justify-end">
+                          <span className="text-xs text-muted-foreground mr-1">$</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={customSalaries[r.staff.id] !== undefined ? customSalaries[r.staff.id] : r.salary}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value)
+                              setCustomSalaries((prev) => ({
+                                ...prev,
+                                [r.staff.id]: isNaN(val) ? 0 : val,
+                              }))
+                            }}
+                            className="h-8 w-20 text-right pr-1 py-1 font-medium text-sm tabular-nums"
+                            aria-label={`Sueldo de ${r.staff.name}`}
+                          />
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
                       {formatCurrency(r.commission)}
