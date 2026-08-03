@@ -660,13 +660,8 @@ function InventoryRow({
           accent="emerald"
         />
       </TableCell>
-      <TableCell className="p-1">
-        <NumberInput
-          value={row.exit}
-          onChange={(v) => updateField(row.productId, "exit", v)}
-          ariaLabel={`Salida de ${row.name}`}
-          accent="rose"
-        />
+      <TableCell className="text-right font-medium tabular-nums text-rose-600 dark:text-rose-450 pr-4">
+        {row.exit}
       </TableCell>
       <TableCell className="bg-amber-50/60 text-right font-bold tabular-nums dark:bg-amber-900/20">
         {finalQty}

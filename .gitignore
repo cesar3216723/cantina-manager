@@ -54,3 +54,13 @@ tool-results/
 .zscripts
 .claude
 .z-ai-config
+
+.vercel
+.env*
+
+# MCP config local (puede contener tokens)
+.cursor/mcp.json
+
+# tar archives
+*.tar
+
